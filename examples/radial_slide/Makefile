@@ -59,10 +59,19 @@ EXCLUDE_SOURCES = \
 
 MODULES = \
 
+
 SOURCES = \
-
-
 
 #-------------------------------------------------------------------
 # Include Makefile containing standard definitions and make options:
 include $(CLAWMAKE)
+
+# Construct the topography data
+.PHONY: topo all
+topo:
+	$(CLAW_PYTHON) maketopo_radial.py
+
+all:
+	$(MAKE) topo
+	$(MAKE) .plots
+	$(MAKE) .htmls

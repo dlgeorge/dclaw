@@ -17,6 +17,9 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
     use storm_module, only: storm_specification_type, output_storm_location
     use storm_module, only: output_storm_location
     use storm_module, only: landfall, display_landfall_time
+    use geoclaw_module, only: dry_tolerance
+    use digclaw_module, only: mom_autostop, momlevel, amidoneyet
+
 
 #ifdef HDF5
     use hdf5
@@ -42,6 +45,9 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
     real(kind=8), allocatable :: qeta(:)
     real(kind=4), allocatable :: qeta4(:), aux4(:)
     integer :: lenaux4, ivar
+
+    ! momentum calculation
+    real(kind=8) :: locmom
 
 #ifdef HDF5
     ! HDF writing
@@ -75,7 +81,9 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
                                            "i6,'                 ndim'/,"   // &
                                            "i6,'                 nghost'/," // &
                                            "a10,'             format'/,/)"
-    
+
+    if (mom_autostop .eqv. .TRUE.) locmom = 0.
+    ! initialize local momentum as zero. if using mom_autostop
 
     ! Output timing
     call system_clock(clock_start,clock_rate)
@@ -90,7 +98,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
     ! Note:  Currently outputs all aux components if any are requested
     out_aux = ((output_aux_num > 0) .and.               &
               ((.not. output_aux_onlyonce) .or. (abs(time - t0) < 1d-90)))
-                
+
     ! Output storm track if needed
     if (storm_specification_type /= 0) then
         call output_storm_location(time)
@@ -161,8 +169,8 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
                                            delta(1), delta(2)
 
             ! Output grids
-            
-            ! Round off if nearly zero 
+
+            ! Round off if nearly zero
             ! (Do this for all output_format's)
             forall (m = 1:num_eqn,                              &
                     i=num_ghost + 1:num_cells(1) + num_ghost,   &
@@ -184,29 +192,46 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
 
                             ! Calculate sufaces
                             eta = h + alloc(iaddaux(1,i,j))
-                            eta = eta - alloc(iadd(7,i,j))  ! DIG
+                            eta = eta - alloc(iadd(7,i,j))   ! Adjust eta based on entrainment
                             if (abs(eta) < 1d-99) then
                                 eta = 0.d0
                             end if
 
+                            !write(out_unit, "(2i5, 50e26.16)") i, j, h, eta
+
                             !write(out_unit, "(50e26.16)") h, hu, hv, eta
                             write(out_unit, "(50e26.16)") &
                                  (alloc(iadd(ivar,i,j)), ivar=1,num_eqn), eta
+
+
+                            ! approximate local momentum as sqrt((hu**2)+(hv**2))
+                            ! stopping criteria is whether this value is equivalent to zero,
+                            ! summed across all grids at level==momlevel
+                            if (mom_autostop .eqv. .TRUE.) then
+                            if (level .eq. momlevel ) then
+                                ! calculate and add to momentum to get a momlevel momentum sum.
+                                if (h .gt. dry_tolerance) then ! if substantial thickness.
+                                    locmom = locmom + ((hu/h)**2+ (hv/h)**2)**0.5
+                                endif
+                            endif
+                            endif
+
+
                         end do
                         write(out_unit, *) ' '
                     end do
 
             else if (output_format==2 .or. output_format==3) then
                 ! binary32 or binary64
-                
+
                 ! Note: We are writing out ghost cell data also,
                 ! so need to update this
                 call bound(time,num_eqn,num_ghost,alloc(q_loc),     &
                              num_cells(1) + 2*num_ghost,            &
                              num_cells(2) + 2*num_ghost,            &
                              grid_ptr,alloc(aux_loc),num_aux)
-                
-                    
+
+
                 ! Need to add eta to the output data
                 allocate(qeta((num_eqn + 1)                         &
                          * (num_cells(1) + 2 * num_ghost)           &
@@ -217,11 +242,11 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
                             qeta(iaddqeta(m, i, j)) = alloc(iadd(m, i, j))
                         end do
                         eta = alloc(iadd(1, i, j)) + alloc(iaddaux(1, i ,j))
-                        eta = eta - alloc(iadd(7,i,j))  ! DIG
+                        eta = eta - alloc(iadd(7,i,j))  ! Adjust eta based on entrainment
                         qeta(iaddqeta(num_eqn + 1, i, j)) = eta
                     end do
                 end do
-                        
+
                 if (output_format==2) then
                     ! binary32 (shorten to 4-byte)
                     allocate(qeta4((num_eqn + 1)                         &
@@ -235,13 +260,13 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
                     ! binary64 (full 8-byte)
                     write(binary_unit) qeta
                 endif
-                
+
                 deallocate(qeta)
 
             else if (output_format == 4) then
                 ! HDF5 output
 #ifdef HDF5
-                ! Create data space - handles dimensions of the corresponding 
+                ! Create data space - handles dimensions of the corresponding
                 ! data set - annoyingling need to stick grid size into other
                 ! data type
                 dims = (/ num_eqn, num_cells(1) + 2 * num_ghost,               &
@@ -262,7 +287,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
 #endif
             else
                 print *, "Unsupported output format", output_format,"."
-                stop 
+                stop
 
             endif
             grid_ptr = node(levelptr, grid_ptr)
@@ -278,6 +303,15 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
 #endif
     end if
 
+    if (time .gt. 1.0d0) then
+        if (mom_autostop) then
+            ! if absolute value of local momentum is very close to zero, then stop.
+            if (locmom .le. 0.001d0) then ! add a full stop criterion.
+            amidoneyet = .TRUE.
+            endif
+        endif
+    endif
+
     ! ==========================================================================
     ! Write out fort.a file
     if (out_aux) then
@@ -291,7 +325,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
         else if (output_format == 4) then
             ! Create group for aux
             call h5gcreate_f(hdf_file, "/aux", aux_group, hdf_error)
-#endif            
+#endif
         end if
 
         do level = level_begin, level_end
@@ -312,7 +346,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
                     ! ASCII output
                     case(1)
 
-                        ! We only output header info for aux data if writing 
+                        ! We only output header info for aux data if writing
                         ! ASCII data
                         write(out_unit, header_format) grid_ptr, level, &
                                                        num_cells(1),    &
@@ -348,7 +382,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
                         aux4 = real(alloc(iaddaux(1, 1, 1):i), kind=4)
                         write(out_unit) aux4
                         deallocate(aux4)
-                        
+
                     case(3)
                         ! binary64
                         ! Note: We are writing out ghost cell data also
@@ -359,7 +393,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
                     ! HDF5 output
                     case(4)
 #ifdef HDF5
-                ! Create data space - handles dimensions of the corresponding 
+                ! Create data space - handles dimensions of the corresponding
                 ! data set - annoyingling need to stick grid size into other
                 ! data type
                 dims = (/ num_aux, num_cells(1) + 2 * num_ghost,               &
@@ -383,7 +417,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
 #endif
                     case default
                         print *, "Unsupported output format", output_format,"."
-                        stop 
+                        stop
 
                 end select
                 grid_ptr = node(levelptr, grid_ptr)
@@ -405,7 +439,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
 
     ! Note:  We need to print out num_ghost too in order to strip ghost cells
     !        from q array when reading in pyclaw.io.binary
-    
+
     if (output_format == 1) then
         file_format = 'ascii'
     else if (output_format == 2) then
@@ -415,7 +449,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
     else if (output_format == 4) then
         file_format = 'hdf'
     endif
-    
+
     write(out_unit, t_file_format) time, num_eqn + 1, num_grids, num_aux,   &
                                    2, num_ghost, file_format
     close(out_unit)
@@ -425,7 +459,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
     open(unit=out_unit, file=timing_file_name, form='formatted',         &
              status='unknown', action='write', position='append')
              !status='old', action='write', position='append')
-    
+
     timing_line = "(e16.6, ', ', e16.6, ', ', e16.6,"
     do level=1, mxnest
         timing_substr = "', ', e16.6, ', ', e16.6, ', ', e16.6"
@@ -449,7 +483,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
     write(out_unit, timing_line) time, timeTick_overall, t_CPU_overall, &
         (real(tvoll(i), kind=8) / real(clock_rate, kind=8), &
          tvollCPU(i), rvoll(i), i=1,mxnest)
-    
+
     close(out_unit)
 
     ! ==========================================================================
@@ -473,7 +507,7 @@ subroutine valout(level_begin, level_end, time, num_eqn, num_aux)
     call cpu_time(cpu_finish)
     timeValout = timeValout + clock_finish - clock_start
     timeValoutCPU = timeValoutCPU + cpu_finish - cpu_start
-    
+
 
 contains
 
