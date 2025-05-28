@@ -54,6 +54,7 @@ c-----------------------------------------------------------------------
       double precision sL,sR,sRoe1,sRoe2,sE1,sE2,uhat,chat
       double precision delb,s1m,s2m,hm,criticaltol,criticaltol_2
       double precision s1s2bar,s1s2tilde,hbar,source2dx,veltol1,veltol2
+      double precision s1s2_ratio
       double precision hstarHLL,deldelh,drytol,gz,geps,tausource
       double precision raremin,raremax,rare1st,rare2st,sdelta
       double precision gammaL,gammaR,theta1,theta2,theta3,vnorm
@@ -151,7 +152,8 @@ c-----------------------------------------------------------------------
       sw(3)= max(sw(3),s1m) !Modified Einfeldt speed
       sw(2) = 0.5d0*(sw(3)+sw(1))
 
-      hstarHLL = max((huL-huR+sE2*hR-sE1*hL)/(sE2-sE1),0.d0) ! middle state in an HLL solve
+      !hstarHLL = max((huL-huR+sE2*hR-sE1*hL)/(sE2-sE1),0.d0) ! single middle state in an HLL solve
+      hstarHLL = max((huL-huR+sw(3)*hR-sw(1)*hL)/(sw(3)-sw(1)),drytol) ! single middle state in an HLL solve 
 c     !determine the middle entropy corrector wave------------------------
       rarecorrectortest = .false.
       rarecorrector=.false.
@@ -182,73 +184,86 @@ c     !determine the middle entropy corrector wave------------------------
 
       delb=(bR-bL)!#kappa
 
+      vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
+      if (vnorm.gt.0.d0) then
+
+      endif
+
       !determine ss-wave
       hbar =  0.5d0*(hL+hR)
       s1s2bar = 0.25d0*(uL+uR)**2- gz*hbar
       s1s2tilde= max(0.d0,uL*uR) - gz*hbar
 
-      !dig save for later
-      !supercritical, bound jump in h at interface to hL. also reduces source
-      !if (sw(1).gt.0.d0.and.hL.gt.0.d0.and.delb.lt.0.d0) then 
-      !  s1s2bar = max(s1s2bar,-gz*hbar*delb/hL)
-      !elseif (sw(3).lt.0.d0.and.hR.gt.0.d0.and.delb.gt.0.d0) then
-      !  s1s2bar = max(s1s2bar,gz*hbar*delb/hR)
-      !endif
-
-c     !find if sonic problem
+c     !find if sonic problem (or very far from steady state)
       sonic=.false.
-      if (dabs(s1s2bar).le.criticaltol) then
-         sonic=.true.
-      !elseif (uL*uR.lt.0.d0) then (dig save for later)
+      !if (dabs(s1s2bar).le.criticaltol) then
+      !   sonic=.true.
+      !elseif (uL*uR.lt.0.d0) then 
       !   sonic =.true.
-      elseif (s1s2bar*s1s2tilde.le.criticaltol**2) then
+      if (s1s2bar*s1s2tilde.le.criticaltol**2) then
          sonic=.true.
-      elseif (s1s2bar*sE1*sE2.le.criticaltol**2) then
+      elseif (s1s2bar*sw(1)*sw(3).le.criticaltol**2) then
          sonic = .true.
-      elseif (min(dabs(sE1),dabs(sE2)).lt.criticaltol_2) then
-         sonic=.true.
-      elseif (sE1.lt.criticaltol_2.and.s1m.gt.-criticaltol_2) then
-         sonic = .true.
-      elseif (sE2.gt.-criticaltol_2.and.s2m.lt.criticaltol_2) then
-         sonic = .true.
-      elseif ((uL+dsqrt(geps*hL))*(uR+dsqrt(geps*hR)).lt.0.d0) then
-         sonic=.true.
-      elseif ((uL-dsqrt(geps*hL))*(uR-dsqrt(geps*hR)).lt.0.d0) then
-         sonic=.true.
+      !elseif (min(dabs(sE1),dabs(sE2)).lt.criticaltol_2) then
+      !   sonic=.true.
+      !elseif (sE1.lt.criticaltol_2.and.s1m.gt.-criticaltol_2) then
+      !   sonic = .true.
+      !elseif (sE2.gt.-criticaltol_2.and.s2m.lt.criticaltol_2) then
+      !   sonic = .true.
+      !elseif ((uL+dsqrt(geps*hL))*(uR+dsqrt(geps*hR)).lt.0.d0) then
+      !   sonic=.true.
+      !elseif ((uL-dsqrt(geps*hL))*(uR-dsqrt(geps*hR)).lt.0.d0) then
+      !   sonic=.true.
       endif
 
+      ! bound jump in h at interface, positivity constraint, also constrains source term
+      if (sw(1).gt.0.d0.and.hL.gt.0.d0) then 
+        s1s2bar = max(s1s2bar,gz*hbar*delb/-hL)
+      elseif (sw(3).lt.0.d0.and.hR.gt.0.d0) then
+        s1s2bar = max(s1s2bar,gz*hbar*delb/hR)
+      elseif (sw(1).lt.-criticaltol.and.sw(3).gt.criticaltol) then
+        s1s2bar=min(s1s2bar,sw(1)*gz*hbar*delb/
+     &   (hstarHLL*(sw(3)-sw(1))))
+        s1s2bar=min(s1s2bar,sw(3)*gz*hbar*delb/
+     &    (hstarHLL*(sw(3)-sw(1))))
+      endif
+
+      sonic=.true.
       if (sonic) then
-         source2dx = -gz*hbar*delb
+         s1s2_ratio = 1.d0
+         !source2dx = -gz*hbar*delb
       else
-         source2dx = -gz*hbar*delb*min(s1s2tilde/s1s2bar,1.d0)
+         s1s2_ratio = max(0.d0,min(s1s2tilde/s1s2bar,1.d0))
+         !source2dx = -gz*hbar*delb*min(s1s2tilde/s1s2bar,1.d0)
       endif
+       source2dx = -gz*hbar*delb*s1s2_ratio
+      !source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb))
+      !source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
 
-      source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb))
-      source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
-
-      if (dabs(u).le.veltol2) then
-         source2dx=-hbar*gz*delb
-      endif
+      !if (dabs(u).le.veltol2) then
+      !   source2dx=-hbar*gz*delb
+      !endif
 
 c     !find bounds in case of critical state resonance, or negative states
 c     !find jump in h, deldelh
 
+      !deldelh = delb*gz*hbar/s1s2bar
       if (sonic) then
          deldelh =  -delb
       else
          deldelh = delb*gz*hbar/s1s2bar
       endif
 c     !find bounds in case of critical state resonance, or negative states
-      if (sE1.lt.-criticaltol.and.sE2.gt.criticaltol) then
-         deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE2)
-         deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE1)
-      elseif (sE1.ge.criticaltol) then
-         deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE1)
-         deldelh = max(deldelh,-hL)
-      elseif (sE2.le.-criticaltol) then
-         deldelh = min(deldelh,hR)
-         deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE2)
-      endif
+      !if (sE1.lt.-criticaltol.and.sE2.gt.criticaltol) then
+      !   deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE2)
+      !   deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE1)
+      !elseif (sE1.ge.criticaltol) then
+      !   deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE1)
+      !   deldelh = max(deldelh,-hL)
+      !elseif (sE2.le.-criticaltol) then
+      !   deldelh = min(deldelh,hR)
+      !   deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE2)
+      !endif
 
 
 *     !determine R
@@ -291,7 +306,7 @@ c     !find bounds in case of critical state resonance, or negative states
          ! until fixed, bed_normal = 1 yields error in make .data (1/30/24)
       !endif
 
-      vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
+      !vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
       if (vnorm>0.0d0) then
 
          tausource =  0.0d0 ! if vnorm>0 then src2 handles friction.

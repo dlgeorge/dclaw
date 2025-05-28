@@ -39,7 +39,7 @@ c
 c This data is along a slice in the x-direction if ixy=1
 c     or the y-direction if ixy=2.
 
-c  Note that the i'th Riemann problem has left state qr(i-1,:)
+c  Note that the i-th Riemann problem has left state qr(i-1,:)
 c     and right state ql(i,:)
 c  From the basic clawpack routines, this routine is called with
 c     ql = qr
@@ -329,7 +329,7 @@ c==========Capacity for mapping from latitude longitude to physical space====
 
           do mw=1,mwaves
 c             if (s(mw,i) .gt. 316.d0) then
-c               # shouldn't happen unless h > 10 km!
+c               # should not happen unless h > 10 km!
 c                write(6,*) 'speed > 316: i,mw,s(mw,i): ',i,mw,s(mw,i)
 c                endif
                s(mw,i)=dxdc*s(mw,i)
