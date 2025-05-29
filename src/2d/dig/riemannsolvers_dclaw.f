@@ -196,51 +196,55 @@ c     !determine the middle entropy corrector wave------------------------
 
 c     !find if sonic problem (or very far from steady state)
       sonic=.false.
-      !if (dabs(s1s2bar).le.criticaltol) then
-      !   sonic=.true.
-      !elseif (uL*uR.lt.0.d0) then 
-      !   sonic =.true.
+      
       if (s1s2bar*s1s2tilde.le.criticaltol**2) then
          sonic=.true.
+      elseif (dabs(s1s2bar).le.criticaltol) then
+         sonic=.true.
+      elseif (uL*uR.lt.0.d0) then 
+         sonic =.true.
       elseif (s1s2bar*sw(1)*sw(3).le.criticaltol**2) then
          sonic = .true.
-      !elseif (min(dabs(sE1),dabs(sE2)).lt.criticaltol_2) then
-      !   sonic=.true.
-      !elseif (sE1.lt.criticaltol_2.and.s1m.gt.-criticaltol_2) then
-      !   sonic = .true.
-      !elseif (sE2.gt.-criticaltol_2.and.s2m.lt.criticaltol_2) then
-      !   sonic = .true.
-      !elseif ((uL+dsqrt(geps*hL))*(uR+dsqrt(geps*hR)).lt.0.d0) then
-      !   sonic=.true.
-      !elseif ((uL-dsqrt(geps*hL))*(uR-dsqrt(geps*hR)).lt.0.d0) then
-      !   sonic=.true.
+      elseif (min(dabs(sE1),dabs(sE2)).lt.criticaltol_2) then
+         sonic=.true.
+      elseif (sE1.lt.criticaltol_2.and.s1m.gt.-criticaltol_2) then
+         sonic = .true.
+      elseif (sE2.gt.-criticaltol_2.and.s2m.lt.criticaltol_2) then
+         sonic = .true.
+      elseif ((uL+dsqrt(geps*hL))*(uR+dsqrt(geps*hR)).lt.0.d0) then
+         sonic=.true.
+      elseif ((uL-dsqrt(geps*hL))*(uR-dsqrt(geps*hR)).lt.0.d0) then
+         sonic=.true.
       endif
 
       ! bound jump in h at interface, positivity constraint, also constrains source term
-      if (sw(1).gt.0.d0.and.hL.gt.0.d0) then 
+      if (sw(1).gt.criticaltol.and.hL.gt.drytol) then 
         s1s2bar = max(s1s2bar,gz*hbar*delb/-hL)
-      elseif (sw(3).lt.0.d0.and.hR.gt.0.d0) then
+      elseif (sw(3).lt.-criticaltol.and.hR.gt.drytol) then
         s1s2bar = max(s1s2bar,gz*hbar*delb/hR)
-      elseif (sw(1).lt.-criticaltol.and.sw(3).gt.criticaltol) then
+      elseif (sw(1).lt.-criticaltol.and.sw(3).gt.criticaltol
+     &          .and.hstarHLL.gt.drytol) then
         s1s2bar=min(s1s2bar,sw(1)*gz*hbar*delb/
      &   (hstarHLL*(sw(3)-sw(1))))
         s1s2bar=min(s1s2bar,sw(3)*gz*hbar*delb/
      &    (hstarHLL*(sw(3)-sw(1))))
+      else
+        s1s2bar = -gz*hbar
       endif
 
-      sonic=.true.
+
       if (sonic) then
          s1s2_ratio = 1.d0
          !source2dx = -gz*hbar*delb
       else
-         s1s2_ratio = max(0.d0,min(s1s2tilde/s1s2bar,1.d0))
+         s1s2_ratio = max(0.d0,s1s2tilde/s1s2bar)
          !source2dx = -gz*hbar*delb*min(s1s2tilde/s1s2bar,1.d0)
       endif
        source2dx = -gz*hbar*delb*s1s2_ratio
-      !source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb))
-      !source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
+       source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb))
+       source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
 
-      !if (dabs(u).le.veltol2) then
+      ! if (dabs(u).le.veltol2) then
       !   source2dx=-hbar*gz*delb
       !endif
 
@@ -253,17 +257,17 @@ c     !find jump in h, deldelh
       else
          deldelh = delb*gz*hbar/s1s2bar
       endif
-c     !find bounds in case of critical state resonance, or negative states
-      !if (sE1.lt.-criticaltol.and.sE2.gt.criticaltol) then
-      !   deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE2)
-      !   deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE1)
-      !elseif (sE1.ge.criticaltol) then
-      !   deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE1)
-      !   deldelh = max(deldelh,-hL)
-      !elseif (sE2.le.-criticaltol) then
-      !   deldelh = min(deldelh,hR)
-      !   deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE2)
-      !endif
+c     !find bounds on deltah at interface based on depth positivity constraint
+      if (sE1.lt.-criticaltol.and.sE2.gt.criticaltol) then
+         deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE2)
+         deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE1)
+      elseif (sE1.ge.criticaltol) then
+         deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE1)
+         deldelh = max(deldelh,-hL)
+      elseif (sE2.le.-criticaltol) then
+         deldelh = min(deldelh,hR)
+         deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE2)
+      endif
 
 
 *     !determine R
