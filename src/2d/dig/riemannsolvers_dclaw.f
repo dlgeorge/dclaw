@@ -54,7 +54,7 @@ c-----------------------------------------------------------------------
       double precision sL,sR,sRoe1,sRoe2,sE1,sE2,uhat,chat
       double precision delb,s1m,s2m,hm,criticaltol,criticaltol_2
       double precision s1s2bar,s1s2tilde,hbar,source2dx,veltol1,veltol2
-      double precision s1s2_ratio
+      double precision s1s2_ratio,ss_delta
       double precision hstarHLL,deldelh,drytol,gz,geps,tausource
       double precision raremin,raremax,rare1st,rare2st,sdelta
       double precision gammaL,gammaR,theta1,theta2,theta3,vnorm
@@ -195,27 +195,41 @@ c     !determine the middle entropy corrector wave------------------------
       s1s2tilde= max(0.d0,uL*uR) - gz*hbar
 
 c     !find if sonic problem (or very far from steady state)
-      sonic=.false.
+      !sonic=.false.
       
-      if (s1s2bar*s1s2tilde.le.criticaltol**2) then
-         sonic=.true.
-      elseif (dabs(s1s2bar).le.criticaltol) then
-         sonic=.true.
-      elseif (uL*uR.lt.0.d0) then 
-         sonic =.true.
-      elseif (s1s2bar*sw(1)*sw(3).le.criticaltol**2) then
-         sonic = .true.
-      elseif (min(dabs(sE1),dabs(sE2)).lt.criticaltol_2) then
-         sonic=.true.
-      elseif (sE1.lt.criticaltol_2.and.s1m.gt.-criticaltol_2) then
-         sonic = .true.
-      elseif (sE2.gt.-criticaltol_2.and.s2m.lt.criticaltol_2) then
-         sonic = .true.
-      elseif ((uL+dsqrt(geps*hL))*(uR+dsqrt(geps*hR)).lt.0.d0) then
-         sonic=.true.
-      elseif ((uL-dsqrt(geps*hL))*(uR-dsqrt(geps*hR)).lt.0.d0) then
-         sonic=.true.
-      endif
+      !if (s1s2bar*s1s2tilde.le.criticaltol**2) then
+      !   sonic=.true.
+      !elseif (dabs(s1s2bar).le.criticaltol) then
+      !   sonic=.true.
+      !elseif (uL*uR.lt.0.d0) then 
+      !   sonic =.true.
+      !elseif (s1s2bar*sw(1)*sw(3).le.criticaltol**2) then
+      !   sonic = .true.
+      !elseif (min(dabs(sE1),dabs(sE2)).lt.criticaltol_2) then
+      !   sonic=.true.
+      !elseif (sE1.lt.criticaltol_2.and.s1m.gt.-criticaltol_2) then
+      !   sonic = .true.
+      !elseif (sE2.gt.-criticaltol_2.and.s2m.lt.criticaltol_2) then
+      !   sonic = .true.
+      !elseif ((uL+dsqrt(geps*hL))*(uR+dsqrt(geps*hR)).lt.0.d0) then
+      !   sonic=.true.
+      !elseif ((uL-dsqrt(geps*hL))*(uR-dsqrt(geps*hR)).lt.0.d0) then
+      !   sonic=.true.
+      !endif
+
+      ! determine if steady state Riemann invariants are close or far
+      ss_delta = dabs(huR - huL)/(dabs(huL)+dabs(huR)) !1 if opposite sign (non-steady)
+      ! 2nd Riemann invariant
+      ss_delta = max(ss_delta,
+     &  dabs(0.5*uR**2 + gz*hR +gz*bR - 0.5*uL**2 - gz*hL -gz*bL )/
+     &  (dabs(0.5*uR**2 +gz*hR)+dabs(0.5*uL**2 +gz*hL)+dabs(bR-bL)))
+      ! transcritical (metric either 1 or zero)
+       ss_delta = max(ss_delta,
+     &    dabs(dsign(1.d0,(uR**2-gz*hR))-dsign(1.d0,(uL**2-gz*hL)))/
+     &     (dabs(dsign(1.d0,(uR**2-gz*hR)))
+     &    + dabs(dsign(1.d0,(uL**2-gz*hL)))))
+        !fix rounding error if any ss_delta in [0,1]
+       ss_delta = max(0.d0, min(ss_delta,1.d0))
 
       ! bound jump in h at interface, positivity constraint, also constrains source term
       if (sw(1).gt.criticaltol.and.hL.gt.drytol) then 
@@ -231,17 +245,19 @@ c     !find if sonic problem (or very far from steady state)
       else
         s1s2bar = -gz*hbar
       endif
-
+      if (s1s2bar*s1s2tilde.le.0.d0) then
+         sonic=.true.
+      endif
 
       if (sonic) then
          s1s2_ratio = 1.d0
          !source2dx = -gz*hbar*delb
       else
-         s1s2_ratio = max(0.d0,s1s2tilde/s1s2bar)
+         s1s2_ratio = s1s2tilde/s1s2bar
          !source2dx = -gz*hbar*delb*min(s1s2tilde/s1s2bar,1.d0)
       endif
-       source2dx = -gz*hbar*delb*s1s2_ratio
-       source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb))
+       source2dx = -gz*hbar*delb*((1.d0-ss_delta)*s1s2_ratio + ss_delta)
+       source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb)) 
        source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
 
       ! if (dabs(u).le.veltol2) then
@@ -255,7 +271,7 @@ c     !find jump in h, deldelh
       if (sonic) then
          deldelh =  -delb
       else
-         deldelh = delb*gz*hbar/s1s2bar
+         deldelh = delb*((1.d0-ss_delta)*(gz*hbar/s1s2bar)-ss_delta)
       endif
 c     !find bounds on deltah at interface based on depth positivity constraint
       if (sE1.lt.-criticaltol.and.sE2.gt.criticaltol) then
