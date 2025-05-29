@@ -257,8 +257,8 @@ c     !find if sonic problem (or very far from steady state)
          !source2dx = -gz*hbar*delb*min(s1s2tilde/s1s2bar,1.d0)
       endif
        source2dx = -gz*hbar*delb*((1.d0-ss_delta)*s1s2_ratio + ss_delta)
-       source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb)) 
-       source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
+       !source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb)) 
+       !source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
 
       ! if (dabs(u).le.veltol2) then
       !   source2dx=-hbar*gz*delb
