@@ -153,7 +153,7 @@ c-----------------------------------------------------------------------
       sw(2) = 0.5d0*(sw(3)+sw(1))
 
       !hstarHLL = max((huL-huR+sE2*hR-sE1*hL)/(sE2-sE1),0.d0) ! single middle state in an HLL solve
-      hstarHLL = max((huL-huR+sw(3)*hR-sw(1)*hL)/(sw(3)-sw(1)),drytol) ! single middle state in an HLL solve 
+      hstarHLL = max((huL-huR+sw(3)*hR-sw(1)*hL)/(sw(3)-sw(1)),drytol) ! single middle state in an HLL solve
 c     !determine the middle entropy corrector wave------------------------
       rarecorrectortest = .false.
       rarecorrector=.false.
@@ -182,12 +182,14 @@ c     !determine the middle entropy corrector wave------------------------
          if (hstarHLL.lt.min(hL,hR)/5.d0) rarecorrector=.false.
       endif
 
+      !determine cell edge conditions for friction 
+
       delb=(bR-bL)!#kappa
 
       vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
-      if (vnorm.gt.0.d0) then
-
-      endif
+      !if (vnorm.gt.0.d0.and..false.) then
+      !  delb = delb - 0.5d0*(taudirR*tan(phiR)+taudirL*tan(phiL))
+      !endif
 
       !determine ss-wave
       hbar =  0.5d0*(hL+hR)
@@ -218,6 +220,9 @@ c     !find if sonic problem (or very far from steady state)
       !endif
 
       ! determine if steady state Riemann invariants are close or far
+      ! if far critical excess ratio of far left and right states not good approx at interface
+      ! convex combination of 1 and critical excess ratio using metric (1 for non-steady data)
+      ! replaces approach where near sonic states are tested. better generally I think
       ss_delta = dabs(huR - huL)/(dabs(huL)+dabs(huR)) !1 if opposite sign (non-steady)
       ! 2nd Riemann invariant
       ss_delta = max(ss_delta,
@@ -278,11 +283,11 @@ c     !find bounds on deltah at interface based on depth positivity constraint
          deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE2)
          deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE1)
       elseif (sE1.ge.criticaltol) then
-         deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE1)
+         deldelh = min(deldelh,-hL+hstarHLL*(sE2-sE1)/sE1)
          deldelh = max(deldelh,-hL)
       elseif (sE2.le.-criticaltol) then
          deldelh = min(deldelh,hR)
-         deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE2)
+         deldelh = max(deldelh,hR+hstarHLL*(sE2-sE1)/sE2)
       endif
 
 
@@ -329,9 +334,13 @@ c     !find bounds on deltah at interface based on depth positivity constraint
       !vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
       if (vnorm>0.0d0) then
 
-         tausource =  0.0d0 ! if vnorm>0 then src2 handles friction.
+         tausource =  0.0d0 !src2 handles friction.
+         !gh tan\phi treated with b (b ~ xtan\phi). need -ptan\phi
+         !tausource = 0.5d0*((taudirR*pR/rhoR)+(taudirL*pL/rhoL))
+         
 
-      elseif (0.5d0*abs(taudirR*tauR/rhoR + tauL*taudirR/rhoL)
+
+      elseif (0.5d0*abs(taudirR*tauR/rhoR + tauL*taudirL/rhoL)
      &      .gt.abs(del(2) - source2dx)) then
 
 
@@ -346,7 +355,7 @@ c     !find bounds on deltah at interface based on depth positivity constraint
          del(4) = 0.0d0
       else
          ! failure of static material
-         tausource = 0.5d0*((taudirR*tauR/rhoR)+(tauL*taudirR/rhoL))!*dx
+         tausource = 0.5d0*((taudirR*tauR/rhoR)+(tauL*taudirL/rhoL))!*dx
          tausource = dsign(tausource,del(2)-source2dx)
       endif
 
