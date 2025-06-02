@@ -54,7 +54,7 @@ c-----------------------------------------------------------------------
       double precision sL,sR,sRoe1,sRoe2,sE1,sE2,uhat,chat
       double precision delb,s1m,s2m,hm,criticaltol,criticaltol_2
       double precision s1s2bar,s1s2tilde,hbar,source2dx,veltol1,veltol2
-      double precision s1s2_ratio,ss_delta
+      double precision s1s2_ratio,ss_delta,dels
       double precision hstarHLL,deldelh,drytol,gz,geps,tausource
       double precision raremin,raremax,rare1st,rare2st,sdelta
       double precision gammaL,gammaR,theta1,theta2,theta3,vnorm
@@ -66,7 +66,7 @@ c-----------------------------------------------------------------------
       veltol2=0.d0
       !criticaltol=1.d-6
       drytol = dry_tolerance
-      criticaltol = max(drytol*grav, 1d-6)
+      criticaltol = 1.d-6!max(drytol*grav, 1d-6)
       criticaltol_2 = sqrt(criticaltol)
 
       do m=1,4
@@ -237,31 +237,52 @@ c     !find if sonic problem (or very far from steady state)
        ss_delta = max(0.d0, min(ss_delta,1.d0))
 
       ! bound jump in h at interface, positivity constraint, also constrains source term
-      if (sw(1).gt.criticaltol.and.hL.gt.drytol) then 
-        s1s2bar = max(s1s2bar,gz*hbar*delb/-hL)
-      elseif (sw(3).lt.-criticaltol.and.hR.gt.drytol) then
-        s1s2bar = max(s1s2bar,gz*hbar*delb/hR)
-      elseif (sw(1).lt.-criticaltol.and.sw(3).gt.criticaltol
-     &          .and.hstarHLL.gt.drytol) then
-        s1s2bar=min(s1s2bar,sw(1)*gz*hbar*delb/
-     &   (hstarHLL*(sw(3)-sw(1))))
-        s1s2bar=min(s1s2bar,sw(3)*gz*hbar*delb/
-     &    (hstarHLL*(sw(3)-sw(1))))
-      else
-        s1s2bar = -gz*hbar
-      endif
-      if (s1s2bar*s1s2tilde.le.0.d0) then
-         sonic=.true.
+      dels = sw(3)-sw(1)
+      if (sw(1).gt.criticaltol) then 
+        if (hL.gt.drytol) then
+            s1s2bar = max(delb*gz*hbar*sw(1)/(hstarHLL*dels),
+     &         max(s1s2bar,gz*hbar*delb/-hL))
+        else
+            s1s2bar = max(s1s2bar,0.d0)
+        endif
+      elseif (sw(3).lt.-criticaltol) then
+        if (hR.gt.drytol) then
+            s1s2bar = max(gz*hbar*delb*sw(3)/(hstarHLL*dels),
+     &       max(s1s2bar,gz*hbar*delb/hR))    
+        else      
+            s1s2bar = max(s1s2bar,0.d0)
+        endif 
+      elseif (sw(1).lt.-criticaltol.and.sw(3).gt.criticaltol) then
+         if (hstarHLL.gt.drytol) then
+            s1s2bar=min(sw(1)*gz*hbar*delb/(hstarHLL*dels),
+     &           min(s1s2bar,sw(3)*gz*hbar*delb/(hstarHLL*dels)))
+         else 
+            s1s2bar = min(s1s2bar,0.d0)
+         endif
       endif
 
-      if (sonic) then
-         s1s2_ratio = 1.d0
-         !source2dx = -gz*hbar*delb
-      else
-         s1s2_ratio = s1s2tilde/s1s2bar
-         !source2dx = -gz*hbar*delb*min(s1s2tilde/s1s2bar,1.d0)
+      if (s1s2bar*s1s2tilde.le.criticaltol**2) then
+         sonic=.true.
+         ss_delta = 1.d0
       endif
+
+      if (dabs(s1s2bar).lt.criticaltol**2) then
+        s1s2bar = dsign(criticaltol,s1s2bar)
+        sonic=.true.
+        ss_delta = 1.d0
+      endif
+      !if (sonic) then
+      !   s1s2_ratio = 1.d0
+      !   deldelh =  -delb
+         !source2dx = -gz*hbar*delb
+      !else
+         s1s2_ratio = max(0.d0,s1s2tilde/s1s2bar)
+         !deldelh = delb*((1.d0-ss_delta)*(gz*hbar/s1s2bar)-ss_delta)
+         deldelh = delb*gz*hbar/s1s2bar
+         !source2dx = -gz*hbar*delb*min(s1s2tilde/s1s2bar,1.d0)
+      !endif
        source2dx = -gz*hbar*delb*((1.d0-ss_delta)*s1s2_ratio + ss_delta)
+       !deldelh = ((1.d0-ss_delta)*deldelh - ss_delta*delb)
        !source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb)) 
        !source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
 
@@ -273,21 +294,33 @@ c     !find bounds in case of critical state resonance, or negative states
 c     !find jump in h, deldelh
 
       !deldelh = delb*gz*hbar/s1s2bar
-      if (sonic) then
-         deldelh =  -delb
-      else
-         deldelh = delb*((1.d0-ss_delta)*(gz*hbar/s1s2bar)-ss_delta)
-      endif
+      !if (sonic) then
+      !   deldelh =  -delb
+      !else
+      !   deldelh = delb*((1.d0-ss_delta)*(gz*hbar/s1s2bar)-ss_delta)
+      !endif
 c     !find bounds on deltah at interface based on depth positivity constraint
       if (sE1.lt.-criticaltol.and.sE2.gt.criticaltol) then
          deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE2)
          deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE1)
       elseif (sE1.ge.criticaltol) then
-         deldelh = min(deldelh,-hL+hstarHLL*(sE2-sE1)/sE1)
+        if (deldelh.gt.hstarHLL*(sE2-sE1)/sE1.and..false.) then
+            write(*,*) '----case 2-------','sonic',sonic
+            write(*,*) 'deldelh,s1s2bar,hL,hR', deldelh,s1s2bar,hL,hR
+            write(*,*) 'sE1,s1s2tilde,ss_delta',sE1,s1s2tilde,ss_delta
+            write(*,*) 's1sbar0:', 0.25d0*(uL+uR)**2- gz*hbar
+        write(*,*) 'min1:, min2', delb*gz*hbar*sw(1)/(hstarHLL*dels),
+     &         gz*hbar*delb/-hL
+      write(*,*) 'Udelh:hstarHLL*(sE2-sE1)/sE1',hstarHLL*(sE2-sE1)/sE1
+        write(*,*) 'diff:', deldelh - hstarHLL*(sE2-sE1)/sE1
+            write(*,*) 'delb*gz*hbar/s1s2bar',delb*gz*hbar/s1s2bar
+            endif
+         deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE1)
          deldelh = max(deldelh,-hL)
+            
       elseif (sE2.le.-criticaltol) then
          deldelh = min(deldelh,hR)
-         deldelh = max(deldelh,hR+hstarHLL*(sE2-sE1)/sE2)
+         deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE2)
       endif
 
 
