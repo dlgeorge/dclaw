@@ -54,11 +54,11 @@ c-----------------------------------------------------------------------
       double precision sL,sR,sRoe1,sRoe2,sE1,sE2,uhat,chat
       double precision delb,s1m,s2m,hm,criticaltol,criticaltol_2
       double precision s1s2bar,s1s2tilde,hbar,source2dx,veltol1,veltol2
-      double precision s1s2_ratio,ss_delta,dels
+      double precision s1s2_ratio,ss_delta,dels,hustarHLL,hmin
       double precision hstarHLL,deldelh,drytol,gz,geps,tausource
       double precision raremin,raremax,rare1st,rare2st,sdelta
       double precision gammaL,gammaR,theta1,theta2,theta3,vnorm
-      double precision alpha_seg,a,b,c
+      double precision alpha_seg,a,b,c,ctn,hsmallest
       logical sonic,rare1,rare2
       logical rarecorrectortest,rarecorrector
 
@@ -66,7 +66,7 @@ c-----------------------------------------------------------------------
       veltol2=0.d0
       !criticaltol=1.d-6
       drytol = dry_tolerance
-      criticaltol = 1.d-6!max(drytol*grav, 1d-6)
+      criticaltol = 1.d-3! max(drytol*grav, 1d-6)
       criticaltol_2 = sqrt(criticaltol)
 
       do m=1,4
@@ -151,9 +151,10 @@ c-----------------------------------------------------------------------
       sw(1)= min(sw(1),s2m) !Modified Einfeldt speed
       sw(3)= max(sw(3),s1m) !Modified Einfeldt speed
       sw(2) = 0.5d0*(sw(3)+sw(1))
-
+      dels = sw(3)-sw(1)
       !hstarHLL = max((huL-huR+sE2*hR-sE1*hL)/(sE2-sE1),0.d0) ! single middle state in an HLL solve
       hstarHLL = max((huL-huR+sw(3)*hR-sw(1)*hL)/(sw(3)-sw(1)),drytol) ! single middle state in an HLL solve
+      hustarHLL = (dels*huL + sw(1)*sw(3)*(hR-hL)+sw(1)*(huL-huR))/dels
 c     !determine the middle entropy corrector wave------------------------
       rarecorrectortest = .false.
       rarecorrector=.false.
@@ -237,37 +238,50 @@ c     !find if sonic problem (or very far from steady state)
        ss_delta = max(0.d0, min(ss_delta,1.d0))
 
       ! bound jump in h at interface, positivity constraint, also constrains source term
-      dels = sw(3)-sw(1)
-      if (sw(1).gt.criticaltol) then 
+      sonic = .false.
+      ctn = criticaltol/dsqrt(gz*hbar) !normalize the tolerance to depth (very small depths not necessarily near critical)
+      if (sw(1).gt.ctn) then 
         if (hL.gt.drytol) then
             s1s2bar = max(delb*gz*hbar*sw(1)/(hstarHLL*dels),
      &         max(s1s2bar,gz*hbar*delb/-hL))
         else
             s1s2bar = max(s1s2bar,0.d0)
         endif
-      elseif (sw(3).lt.-criticaltol) then
+      elseif (sw(3).lt.-ctn) then
         if (hR.gt.drytol) then
             s1s2bar = max(gz*hbar*delb*sw(3)/(hstarHLL*dels),
      &       max(s1s2bar,gz*hbar*delb/hR))    
         else      
             s1s2bar = max(s1s2bar,0.d0)
         endif 
-      elseif (sw(1).lt.-criticaltol.and.sw(3).gt.criticaltol) then
+      elseif (sw(1).lt.-ctn*0.d0.and.sw(3).gt.
+     &                          ctn) then
          if (hstarHLL.gt.drytol) then
             s1s2bar=min(sw(1)*gz*hbar*delb/(hstarHLL*dels),
      &           min(s1s2bar,sw(3)*gz*hbar*delb/(hstarHLL*dels)))
          else 
             s1s2bar = min(s1s2bar,0.d0)
          endif
+      else
+        s1s2bar = min(uL**2-gz*hL,uR**2-gz*hR) !for either shock or rare we want subcrit. estimate
+        sonic = .true.
       endif
 
-      if (s1s2bar*s1s2tilde.le.criticaltol**2) then
-         sonic=.true.
-         ss_delta = 1.d0
-      endif
+      !if (s1s2bar*sw(1)*sw(3).le.criticaltol**4) then
+      !   s1s2bar = dsign(max(abs(s1s2bar),abs(sw(1)*sw(3))),sw(1)*sw(3))
+      !   sonic=.true.
+      !   ss_delta = 1.d0
+      !endif
 
-      if (dabs(s1s2bar).lt.criticaltol**2) then
-        s1s2bar = dsign(criticaltol,s1s2bar)
+      !if (s1s2bar*s1s2tilde.le.criticaltol**4) then
+       !  s1s2bar = dsign(max(abs(s1s2bar),abs(sw(1)*sw(3))),sw(1)*sw(3))
+       !  sonic=.true.
+       !  ss_delta = 1.d0
+      !endif
+
+      if (dabs(s1s2bar).le.ctn**2) then
+        s1s2bar = dsign(ctn**2,s1s2bar)
+        !s1s2bar = min(uL**2-gz*hL,uR**2-gz*hR)
         sonic=.true.
         ss_delta = 1.d0
       endif
@@ -276,13 +290,17 @@ c     !find if sonic problem (or very far from steady state)
       !   deldelh =  -delb
          !source2dx = -gz*hbar*delb
       !else
-         s1s2_ratio = max(0.d0,s1s2tilde/s1s2bar)
+      s1s2_ratio = max(0.d0,s1s2tilde/s1s2bar)
+      s1s2_ratio = min(max(hL/hbar,hR/hbar),
+     &     max(s1s2_ratio,min(hL/hbar,hR/hbar)))
          !deldelh = delb*((1.d0-ss_delta)*(gz*hbar/s1s2bar)-ss_delta)
-         deldelh = delb*gz*hbar/s1s2bar
+      deldelh = delb*gz*hbar/s1s2bar
+      
          !source2dx = -gz*hbar*delb*min(s1s2tilde/s1s2bar,1.d0)
       !endif
-       source2dx = -gz*hbar*delb*((1.d0-ss_delta)*s1s2_ratio + ss_delta)
-       !deldelh = ((1.d0-ss_delta)*deldelh - ss_delta*delb)
+      source2dx = -gz*hbar*delb*((1.d0-ss_delta)*s1s2_ratio + ss_delta)
+      deldelh = ((1.d0-ss_delta)*deldelh - ss_delta*delb)
+      
        !source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb)) 
        !source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
 
@@ -299,26 +317,20 @@ c     !find jump in h, deldelh
       !else
       !   deldelh = delb*((1.d0-ss_delta)*(gz*hbar/s1s2bar)-ss_delta)
       !endif
-c     !find bounds on deltah at interface based on depth positivity constraint
-      if (sE1.lt.-criticaltol.and.sE2.gt.criticaltol) then
+c     !find bounds on deltah at interface based on depth positivity constraint and energy
+      !constraint ensures energy does not increase accross interface
+      
+      if (sE1.lt.-ctn.and.sE2.gt.ctn) then
+        hsmallest = 0.d0*((hustarHLL)**2/(2.d0*gz))**(1.d0/3.d0) 
+        hmin = hstarHLL -hsmallest!small depth for energy constraint
+        hmin = max(0.d0,hmin)
          deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE2)
          deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE1)
-      elseif (sE1.ge.criticaltol) then
-        if (deldelh.gt.hstarHLL*(sE2-sE1)/sE1.and..false.) then
-            write(*,*) '----case 2-------','sonic',sonic
-            write(*,*) 'deldelh,s1s2bar,hL,hR', deldelh,s1s2bar,hL,hR
-            write(*,*) 'sE1,s1s2tilde,ss_delta',sE1,s1s2tilde,ss_delta
-            write(*,*) 's1sbar0:', 0.25d0*(uL+uR)**2- gz*hbar
-        write(*,*) 'min1:, min2', delb*gz*hbar*sw(1)/(hstarHLL*dels),
-     &         gz*hbar*delb/-hL
-      write(*,*) 'Udelh:hstarHLL*(sE2-sE1)/sE1',hstarHLL*(sE2-sE1)/sE1
-        write(*,*) 'diff:', deldelh - hstarHLL*(sE2-sE1)/sE1
-            write(*,*) 'delb*gz*hbar/s1s2bar',delb*gz*hbar/s1s2bar
-            endif
+      elseif (sE1.ge.ctn) then
          deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE1)
          deldelh = max(deldelh,-hL)
             
-      elseif (sE2.le.-criticaltol) then
+      elseif (sE2.le.-ctn) then
          deldelh = min(deldelh,hR)
          deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE2)
       endif
@@ -476,6 +488,10 @@ c     !solve for beta(k) using Cramers Rule=================
          enddo
       enddo
 
+      !split the jump in phi (mom. flux) in middle wave into outer waves
+      !fw(2,1) = fw(2,1) + 0.5d0*fw(2,2)
+      !fw(2,3) = fw(2,3) + 0.5d0*fw(2,2)
+      !fw(2,2) = 0.d0
       !waves and fwaves for delta hum
       fw(4,1) = fw(1,1)*mL
       fw(4,3) = fw(1,3)*mR

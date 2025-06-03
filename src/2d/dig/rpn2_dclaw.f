@@ -370,10 +370,10 @@ c============= compute fluctuations=============================================
 ! this back in. (1/30/2024) Also unclear how often s(mw,i)=0 and
 ! fwave(1:meqn,mw,i)>0 occurs.
 
-!                 amdq(1:meqn,i) = amdq(1:meqn,i)
-!     &                              + 0.5d0 * fwave(1:meqn,mw,i)
-!                 apdq(1:meqn,i) = apdq(1:meqn,i)
-!     &                              + 0.5d0 * fwave(1:meqn,mw,i)
+                 amdq(1:meqn,i) = amdq(1:meqn,i)
+     &                              + 0.5d0 * fwave(1:meqn,mw,i)
+                 apdq(1:meqn,i) = apdq(1:meqn,i)
+     &                              + 0.5d0 * fwave(1:meqn,mw,i)
                endif
             enddo
          enddo

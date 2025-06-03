@@ -348,6 +348,7 @@ def setrun(claw_pkg="dclaw"):
     geo_data.friction_forcing = True  # TODO change?
     geo_data.manning_coefficient = 0.025
     geo_data.friction_depth = 1e6
+    geo_data.speed_limit = 100.0
 
     # Refinement settings
     refinement_data = rundata.refinement_data
