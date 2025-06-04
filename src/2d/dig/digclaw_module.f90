@@ -468,8 +468,16 @@ end subroutine setvars
    ! ========================================================================
    !  calc_taudir
    ! ========================================================================
-   !  Determines the resistive force vector for static cells
-   !  outputs direction cosines at each interface
+   !  Determines the force balance for static cell interface
+   !  using estimates of the total force direction
+   !  from the 4 transverse forces connected to interface
+   !  if any of the 4 configurations fail, the interface is allowed to
+   ! fail and dynamic friction will be integrated in the RS
+   !  aux(i_taudir_(x,y),i,j) = dx,dy if failure allowed, otherwise 0. to be
+   ! interpretted correctly in RS. Note that if failure is allowed, the normal
+   ! RS may not necessarily lead to waves (e.g., steep slope in transverse direction
+   ! but uniform in normal direction, like a flume).
+   ! for interfaces with motion or connected to an interface with motion, failure allowed
    ! ========================================================================
 
 subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
@@ -542,24 +550,6 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
 
             bL = aux(1,i-1,j)-q(i_bdif,i-1,j)
             etaL= hL+bL
-            if (hL<dry_tolerance) then
-               etaL = min(etaL,eta)
-            endif
-
-            hR = q(i_h,i+1,j)
-            huR= q(i_hu,i+1,j)
-            hvR= q(i_hv,i+1,j)
-            hmR = q(i_hm,i+1,j)
-            pR  = q(i_pb,i+1,j)
-            hchiR = q(i_hchi,i+1,j)
-
-            call qfix(hR,huR,hvR,hmR,pR,hchiR,uR,vR,mR,chiR,rhoR,gz)
-
-            bR = aux(1,i+1,j)-q(i_bdif,i+1,j)
-            etaR= hR+bR
-            if (hR<dry_tolerance) then
-               etaR = min(etaR,eta)
-            endif
 
             hB = q(i_h,i,j-1)
             huB= q(i_hu,i,j-1)
@@ -572,9 +562,6 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
 
             bB = aux(1,i,j-1)-q(i_bdif,i,j-1)
             etaB= hB+bB
-            if (hB<dry_tolerance) then
-               etaB = min(etaB,eta)
-            endif
 
             hT = q(i_h,i,j+1)
             huT= q(i_hu,i,j+1)
@@ -587,31 +574,101 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
 
             bT = aux(1,i,j+1)-q(i_bdif,i,j+1)
             etaT= hT+bT
-            if (hT<dry_tolerance) then
-               etaT = min(etaT,eta)
-            endif
+            
+            hTL = q(i_h,i-1,j+1)
+            huTL= q(i_hu,i-1,j+1)
+            hvTL= q(i_hv,i-1,j+1)
+            hmTL = q(i_hm,i-1,j+1)
+            pTL  = q(i_pb,i-1,j+1)
+            hchiTL = q(i_hchi,i-1,j+1)
+
+            call qfix(hTL,huTL,hvTL,hmTL,pTL,hchiTL,uTL,vTL,mTL,chiTL,rhoTL,gz)
+
+            bTL = aux(1,i-1,j+1)-q(i_bdif,i-1,j+1)
+            etaTL= hTL+bTL
+
+            hBL = q(i_h,i-1,j-1)
+            huBL= q(i_hu,i-1,j-1)
+            hvBL= q(i_hv,i-1,j-1)
+            hmBL = q(i_hm,i-1,j-1)
+            pBL  = q(i_pb,i-1,j-1)
+            hchiBL = q(i_hchi,i-1,j-1)
+
+            call qfix(hBL,huBL,hvBL,hmBL,pBL,hchiBL,uBL,vBL,mBL,chiBL,rhoBL,gz)
+
+            bBL = aux(1,i-1,j-1)-q(i_bdif,i-1,j-1)
+            etaBL= hBL+bBL
 
             ! If cell center is dry, set value used for
             ! cell center here based on left/right cell
             ! values.
 
-            if (h<dry_tolerance) then
-               eta = min(etaL,eta)
-               eta = min(etaB,eta)
+            ! If all cells in the center are dry, return
+            ! zeros for taudir_x, _y, and fsphi (no failure)
+            aux(i_fsphi,i,j) = 10.d0
+            if ((h+hL+hB+hT+hBL+hTL)<dry_tolerance) then
+               aux(i_taudir_x,i,j) = 0.d0
+               cycle
             endif
 
-            ! If all cells in the center are dry, return
-            ! zeros for taudir_x, _y, and fsphi
-
-            if ((h+hL+hB+hR+hT)<dry_tolerance) then
-               aux(i_taudir_x,i,j) = 0.d0
-               aux(i_taudir_y,i,j) = 0.d0
-               aux(i_fsphi,i,j) = 0.d0
+            ! if any cells in stencil have motion allow failure
+            if ((hu**2+huL**2+huB**2+huT**2+huBL**2+huTL**2+hv**2+hvL**2+hvB**2+hvT**2+hvBL**2+hvTL**2)>0.d0 then
+               aux(i_taudir_x,i,j) = dx
                cycle
             endif
 
             call setvars(h,u,v,m,p,chi,gz,rho,kperm,alphainv,m_eq,tanpsi,tau)
+            call setvars(hL,uL,vL,mL,pL,chiL,gz,rhoL,kperm,alphainv,m_eq,tanpsi,tauL)
 
+            !detadx (normal)
+            if (hL<dry_tolerance) then
+                bLdx = min(etaL,eta)
+            endif
+            if (h<dry_tolerance) then
+                bdx = min(etaL,eta)
+            endif
+            Fdx = -.5d0*gz*(h**2-hL**2)-gz*0.5*(hL+h)*(bdx-bLdx-dx*tan(theta))
+
+            !4 detady's
+            if (hL<dry_tolerance) then
+                bLdy = min(etabL,bBL)
+            endif
+            if (hBL<dry_tolerance) then
+                bBLdy = min(etabL,etaBL)
+            endif
+            FdyBL = -.5d0*gz*(hL**2-hBL**2)-gz*0.5*(hL+hBL)*(bLdy-bBLdy)
+
+            if (h<dry_tolerance) then
+                bdy = min(eta,etaB)/dy
+            endif
+            if (hB<dry_tolerance) then
+                bBdy = min(eta,etaB)/dy
+            endif
+            FdyB = -.5d0*gz*(h**2-hB**2)-gz*0.5*(h+hB)*(bdy-bBdy)
+
+            if (hTL<dry_tolerance) then
+                bTLdy = min(etaTL,etaL)/dy
+            endif
+            if (hL<dry_tolerance) then
+                bLdy = min(etaTL,etaL)/dy
+            endif
+            FdyTL = -.5d0*gz*(hTL**2-hL**2)-gz*0.5*(hTL+hL)*(bTLdy-bLdy)
+
+            if (hT<dry_tolerance) then
+                bTdy = min(etaT,eta)/dy
+            endif
+            if (h<dry_tolerance) then
+                bdy = min(etaT,eta)/dy
+            endif
+            FdyT = -.5d0*gz*(hT**2-h**2)-gz*0.5*(hT+h)*(bTdy-bdy)
+
+            Fymax2 = max(FdyT**2,max(FdyTL**2,max(FdyBL**2,FdyB**2)))
+            Fmag = sqrt(Fymax2 + Fdx**2)
+            Fresist = 0.5d0*(tauL/rhoL + tau/rho)*dx
+            if (Fmag.gt.Fresist) then
+                
+            endif
+            
             !minmod gradients
             FxC = -gz*h*(EtaR-EtaL)/(2.d0*dx) + gz*h*dsin(theta)
             FyC = -gz*h*(EtaT-EtaB)/(2.d0*dy)

@@ -282,7 +282,7 @@ c     !find if sonic problem (or very far from steady state)
       if (dabs(s1s2bar).le.ctn**2) then
         s1s2bar = dsign(ctn**2,s1s2bar)
         !s1s2bar = min(uL**2-gz*hL,uR**2-gz*hR)
-        sonic=.true.
+        !sonic=.true.
         ss_delta = 1.d0
       endif
       !if (sonic) then
