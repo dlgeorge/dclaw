@@ -497,21 +497,31 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
       double precision :: hR,huR,hvR,hmR,pR,hchiR,bR,etaR
       double precision :: hB,huB,hvB,hmB,pB,hchiB,bB,etaB
       double precision :: hT,huT,hvT,hmT,pT,hchiT,bT,etaT
+      double precision :: hTL,huTL,hvTL,hmTL,pTL,hchiTL,bTL,etaTL
+      double precision :: hTR,huTR,hvTR,hmTR,pTR,hchiTR,bTR,etaTR
+      double precision :: hBL,huBL,hvBL,hmBL,pBL,hchiBL,bBL,etaBL
+      double precision :: hBR,huBR,hvBR,hmBR,pBR,hchiBR,bBR,etaBR
 
       double precision :: u,v,m,chi
       double precision :: uL,vL,mL,chiL,rhoL
       double precision :: uR,vR,mR,chiR,rhoR
       double precision :: uB,vB,mB,chiB,rhoB
       double precision :: uT,vT,mT,chiT,rhoT
+      double precision :: uTL,vTL,mTL,chiTL,rhoTL
+      double precision :: uTR,vTR,mTR,chiTR,rhoTR
+      double precision :: uBL,vBL,mBL,chiBL,rhoBL
+      double precision :: uBR,vBR,mBR,chiBR,rhoBR
       double precision :: theta
       double precision :: tau,rho,alphainv
       double precision :: tanpsi,kperm,m_eq
-      double precision :: Fx,Fy,FxL,FxR,FyL,FyR,FyC,FxC,dot,hvnorm,Fproj
+      double precision :: Fxmax2,Fymax2,Fmag,Fresist
+      double precision :: FdyBL,FdyB,FdyTL,FdyT,FdxL,FdxBL,FdxR,FdxBR
 
       integer :: i,j
 
       gz = grav
 
+      !first for cell edge between i,j and i-1,j for x direction
       do j=2-mbc,my+mbc-1
          do i=2-mbc,mx+mbc-1
 
@@ -521,7 +531,7 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             else
               theta = 0.d0
             endif
-
+            aux(i_fsphi,i,j) = 10.d0
             ! Get h, hu, hv, hm, p, hchi at cell center (no suffix)
             ! (L)eft (R)ight (T)op and (B)ottom cells of the 3x3
             ! cell stencil surrounding cell i,j
@@ -532,12 +542,10 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             hm = q(i_hm,i,j)
             p  = q(i_pb,i,j)
             hchi = q(i_hchi,i,j)
-
-            call qfix(h,hu,hv,hm,p,hchi,u,v,m,chi,rho,gz)
-
             b = aux(1,i,j)-q(i_bdif,i,j)
             eta = h+b
             phi = aux(i_phi,i,j)
+            call qfix(h,hu,hv,hm,p,hchi,u,v,m,chi,rho,gz)
 
             hL = q(i_h,i-1,j)
             huL= q(i_hu,i-1,j)
@@ -545,11 +553,9 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             hmL = q(i_hm,i-1,j)
             pL  = q(i_pb,i-1,j)
             hchiL = q(i_hchi,i-1,j)
-
-            call qfix(hL,huL,hvL,hmL,pL,hchiL,uL,vL,mL,chiL,rhoL,gz)
-
             bL = aux(1,i-1,j)-q(i_bdif,i-1,j)
             etaL= hL+bL
+            call qfix(hL,huL,hvL,hmL,pL,hchiL,uL,vL,mL,chiL,rhoL,gz)
 
             hB = q(i_h,i,j-1)
             huB= q(i_hu,i,j-1)
@@ -557,11 +563,9 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             hmB = q(i_hm,i,j-1)
             pB  = q(i_pb,i,j-1)
             hchiB = q(i_hchi,i,j-1)
-
-            call qfix(hB,huB,hvB,hmB,pB,hchiB,uB,vB,mB,chiB,rhoB,gz)
-
             bB = aux(1,i,j-1)-q(i_bdif,i,j-1)
             etaB= hB+bB
+            call qfix(hB,huB,hvB,hmB,pB,hchiB,uB,vB,mB,chiB,rhoB,gz)
 
             hT = q(i_h,i,j+1)
             huT= q(i_hu,i,j+1)
@@ -569,23 +573,19 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             hmT = q(i_hm,i,j+1)
             pT  = q(i_pb,i,j+1)
             hchiT = q(i_hchi,i,j+1)
-
-            call qfix(hT,huT,hvT,hmT,pT,hchiT,uT,vT,mT,chiT,rhoT,gz)
-
             bT = aux(1,i,j+1)-q(i_bdif,i,j+1)
             etaT= hT+bT
-            
+            call qfix(hT,huT,hvT,hmT,pT,hchiT,uT,vT,mT,chiT,rhoT,gz)
+         
             hTL = q(i_h,i-1,j+1)
             huTL= q(i_hu,i-1,j+1)
             hvTL= q(i_hv,i-1,j+1)
             hmTL = q(i_hm,i-1,j+1)
             pTL  = q(i_pb,i-1,j+1)
             hchiTL = q(i_hchi,i-1,j+1)
-
-            call qfix(hTL,huTL,hvTL,hmTL,pTL,hchiTL,uTL,vTL,mTL,chiTL,rhoTL,gz)
-
             bTL = aux(1,i-1,j+1)-q(i_bdif,i-1,j+1)
             etaTL= hTL+bTL
+            call qfix(hTL,huTL,hvTL,hmTL,pTL,hchiTL,uTL,vTL,mTL,chiTL,rhoTL,gz)
 
             hBL = q(i_h,i-1,j-1)
             huBL= q(i_hu,i-1,j-1)
@@ -593,11 +593,9 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             hmBL = q(i_hm,i-1,j-1)
             pBL  = q(i_pb,i-1,j-1)
             hchiBL = q(i_hchi,i-1,j-1)
-
-            call qfix(hBL,huBL,hvBL,hmBL,pBL,hchiBL,uBL,vBL,mBL,chiBL,rhoBL,gz)
-
             bBL = aux(1,i-1,j-1)-q(i_bdif,i-1,j-1)
             etaBL= hBL+bBL
+            call qfix(hBL,huBL,hvBL,hmBL,pBL,hchiBL,uBL,vBL,mBL,chiBL,rhoBL,gz)
 
             ! If cell center is dry, set value used for
             ! cell center here based on left/right cell
@@ -605,7 +603,6 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
 
             ! If all cells in the center are dry, return
             ! zeros for taudir_x, _y, and fsphi (no failure)
-            aux(i_fsphi,i,j) = 10.d0
             if ((h+hL+hB+hT+hBL+hTL)<dry_tolerance) then
                aux(i_taudir_x,i,j) = 0.d0
                cycle
@@ -620,129 +617,151 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             call setvars(h,u,v,m,p,chi,gz,rho,kperm,alphainv,m_eq,tanpsi,tau)
             call setvars(hL,uL,vL,mL,pL,chiL,gz,rhoL,kperm,alphainv,m_eq,tanpsi,tauL)
 
-            !detadx (normal)
-            if (hL<dry_tolerance) then
-                bLdx = min(etaL,eta)
-            endif
-            if (h<dry_tolerance) then
-                bdx = min(etaL,eta)
-            endif
-            Fdx = -.5d0*gz*(h**2-hL**2)-gz*0.5*(hL+h)*(bdx-bLdx-dx*tan(theta))
-
-            !4 detady's
-            if (hL<dry_tolerance) then
-                bLdy = min(etabL,bBL)
-            endif
-            if (hBL<dry_tolerance) then
-                bBLdy = min(etabL,etaBL)
-            endif
-            FdyBL = -.5d0*gz*(hL**2-hBL**2)-gz*0.5*(hL+hBL)*(bLdy-bBLdy)
-
-            if (h<dry_tolerance) then
-                bdy = min(eta,etaB)/dy
-            endif
-            if (hB<dry_tolerance) then
-                bBdy = min(eta,etaB)/dy
-            endif
-            FdyB = -.5d0*gz*(h**2-hB**2)-gz*0.5*(h+hB)*(bdy-bBdy)
-
-            if (hTL<dry_tolerance) then
-                bTLdy = min(etaTL,etaL)/dy
-            endif
-            if (hL<dry_tolerance) then
-                bLdy = min(etaTL,etaL)/dy
-            endif
-            FdyTL = -.5d0*gz*(hTL**2-hL**2)-gz*0.5*(hTL+hL)*(bTLdy-bLdy)
-
-            if (hT<dry_tolerance) then
-                bTdy = min(etaT,eta)/dy
-            endif
-            if (h<dry_tolerance) then
-                bdy = min(etaT,eta)/dy
-            endif
-            FdyT = -.5d0*gz*(hT**2-h**2)-gz*0.5*(hT+h)*(bTdy-bdy)
+            !Find if failure for i'th cell edge (x-direction, j row)
+            !Force in normal direction (x)
+            call calc_interface_force(Fdx,gz,h,hL,b,bL,dx,theta)
+            
+            !Force in y-direction at 4 edges connected to i'th cell edge
+            call calc_interface_force(FdyBL,gz,hL,hBL,bL,bBL,dy,0.d0)
+            call calc_interface_force(FdyB,gz,h,hB,b,bB,dy,0.d0)
+            call calc_interface_force(FdyTL,gz,hTL,hT,bTL,bT,dy,0.d0)
+            call calc_interface_force(FdyT,gz,hT,h,bT,b,dy,0.d0)
+            
 
             Fymax2 = max(FdyT**2,max(FdyTL**2,max(FdyBL**2,FdyB**2)))
             Fmag = sqrt(Fymax2 + Fdx**2)
             Fresist = 0.5d0*(tauL/rhoL + tau/rho)*dx
             if (Fmag.gt.Fresist) then
-                
+                aux(i_taudir_x,i,j) = dx
+                aux(i_fsphi,i,j) = min(aux(i_fsphi,i,j), Fresist/Fmag)
+            else
+                aux(i_taudir_x,i,j) = 0.d0
+                aux(i_fsphi,i,j) = min(aux(i_fsphi,i,j), Fresist/(Fmag+1.d-16))
+            endif
+
+         enddo
+      enddo
+
+      !repeat for cell edge between i,j and i,j-1 for y direction
+      ! note: stencil to check for transverse forces (x-direction) is different
+      ! (left 2/3 of stencil above and bottom 2/3 of stencil below)
+      ! so new loop is performed because of the cycle instructions in first loop
+
+      do j=2-mbc,my+mbc-1
+         do i=2-mbc,mx+mbc-1
+
+            if (bed_normal.eq.1) then
+              theta = aux(i_theta,i,j)
+              gz = grav*dcos(theta)
+            else
+              theta = 0.d0
             endif
             
-            !minmod gradients
-            FxC = -gz*h*(EtaR-EtaL)/(2.d0*dx) + gz*h*dsin(theta)
-            FyC = -gz*h*(EtaT-EtaB)/(2.d0*dy)
+            ! Get h, hu, hv, hm, p, hchi at cell center (no suffix)
+            ! (L)eft (R)ight (T)op and (B)ottom cells of the 3x3
+            ! cell stencil surrounding cell i,j
 
-            FxL = -gz*0.5d0*(h+hL)*(Eta-EtaL)/(dx) + gz*0.5d0*(h+hL)*dsin(theta)
-            FyL = -gz*0.5d0*(h+hB)*(Eta-EtaB)/(dy)
+            h = q(i_h,i,j)
+            hu = q(i_hu,i,j)
+            hv = q(i_hv,i,j)
+            hm = q(i_hm,i,j)
+            p  = q(i_pb,i,j)
+            hchi = q(i_hchi,i,j)
+            b = aux(1,i,j)-q(i_bdif,i,j)
+            eta = h+b
+            phi = aux(i_phi,i,j)
+            call qfix(h,hu,hv,hm,p,hchi,u,v,m,chi,rho,gz)
 
-            FxR = -gz*0.5d0*(h+hR)*(EtaR-Eta)/(dx) + gz*0.5d0*(h+hR)*dsin(theta)
-            FyR = -gz*0.5d0*(h+hT)*(EtaT-Eta)/(dy)
+            hL = q(i_h,i-1,j)
+            huL= q(i_hu,i-1,j)
+            hvL= q(i_hv,i-1,j)
+            hmL = q(i_hm,i-1,j)
+            pL  = q(i_pb,i-1,j)
+            hchiL = q(i_hchi,i-1,j)
+            bL = aux(1,i-1,j)-q(i_bdif,i-1,j)
+            etaL= hL+bL
+            call qfix(hL,huL,hvL,hmL,pL,hchiL,uL,vL,mL,chiL,rhoL,gz)
 
-            if (FxL*FxR>0.d0) then
-               Fx = sign(min(abs(FxL),abs(FxR)),FxL)
-            else
-               Fx = 0.d0
+            hB = q(i_h,i,j-1)
+            huB= q(i_hu,i,j-1)
+            hvB= q(i_hv,i,j-1)
+            hmB = q(i_hm,i,j-1)
+            pB  = q(i_pb,i,j-1)
+            hchiB = q(i_hchi,i,j-1)
+            bB = aux(1,i,j-1)-q(i_bdif,i,j-1)
+            etaB= hB+bB
+            call qfix(hB,huB,hvB,hmB,pB,hchiB,uB,vB,mB,chiB,rhoB,gz)
+
+            hBL = q(i_h,i-1,j-1)
+            huBL= q(i_hu,i-1,j-1)
+            hvBL= q(i_hv,i-1,j-1)
+            hmBL = q(i_hm,i-1,j-1)
+            pBL  = q(i_pb,i-1,j-1)
+            hchiBL = q(i_hchi,i-1,j-1)
+            bBL = aux(1,i-1,j-1)-q(i_bdif,i-1,j-1)
+            etaBL= hBL+bBL
+            call qfix(hBL,huBL,hvBL,hmBL,pBL,hchiBL,uBL,vBL,mBL,chiBL,rhoBL,gz)
+
+            hBR = q(i_h,i+1,j-1)
+            huBR= q(i_hu,i+1,j-1)
+            hvBR= q(i_hv,i+1,j-1)
+            hmBR = q(i_hm,i+1,j-1)
+            pBR  = q(i_pb,i+1,j-1)
+            hchiBR = q(i_hchi,i+1,j-1)
+            bBR = aux(1,i+1,j-1)-q(i_bdif,i+1,j-1)
+            etaBR= hBR+bBR
+            call qfix(hBR,huBR,hvBR,hmBR,pBR,hchiBR,uBR,vBR,mBR,chiBR,rhoBR,gz)
+
+            hR = q(i_h,i+1,j)
+            huR= q(i_hu,i+1,j)
+            hvR= q(i_hv,i+1,j)
+            hmR = q(i_hm,i+1,j)
+            pR  = q(i_pb,i+1,j)
+            hchiR = q(i_hchi,i+1,j)
+            bR = aux(1,i+1,j)-q(i_bdif,i+1,j)
+            etaR= hR+bR
+            call qfix(hR,huR,hvR,hmR,pR,hchiR,uR,vR,mR,chiR,rhoR,gz)
+
+            ! If cell center is dry, set value used for
+            ! cell center here based on left/right cell
+            ! values.
+
+            ! If all cells in the center are dry, return
+            ! zeros for taudir_x, _y, and fsphi (no failure)
+            if ((h+hL+hR+hBL+hBR+hB)<dry_tolerance) then
+               aux(i_taudir_y,i,j) = 0.d0
+               cycle
             endif
 
-            if (FyL*FyR>0.d0) then
-               Fy = sign(min(abs(FyL),abs(FyR)),FyL)
-            else
-               Fy = 0.d0
+            ! if any cells in stencil have motion allow failure
+            if ((hu**2+huL**2+huR**2+huBL**2+huB**2+huBR**2+hv**2+hvL**2+hvR**2+hvBL**2+hvB**2+hvBR**2)>0.d0 then
+               aux(i_taudir_y,i,j) = dy
+               cycle
             endif
 
-            ! Calculate the magnitude of momentum.
-            hvnorm = sqrt(hu**2 + hv**2)
-            if (hvnorm>0.d0) then ! If moving.
+            call setvars(h,u,v,m,p,chi,gz,rho,kperm,alphainv,m_eq,tanpsi,tau)
+            call setvars(hB,uB,vB,mB,pB,chiB,gz,rhoB,kperm,alphainv,m_eq,tanpsi,tauB)
 
-               ! In D-Claw 4 dx and dy were accessible in the riemann solver.
-               ! To fix in the transition, dx and dy are multiplied by taudir_x and y
-               ! here. This works for everything except for bed normal and produces
-               ! equivalent results (1/13/24)
-               aux(i_taudir_x,i,j) = -dx*hu/hvnorm
-               aux(i_taudir_y,i,j) = -dy*hv/hvnorm
-               dot = min(max(0.d0,Fx*hu) , max(0.d0,Fy*hv))
-               if (dot>0.d0) then
-                  !friction should oppose direction of velocity
-                  !if net force is in same direction, split friction source term
-                  !splitting is useful for small velocities and nearly balanced forces
-                  !only split amount up to maximum net force for large velocities
-                  !aux has cell centered interpretation in Riemann solver
-                  Fproj = dot/hvnorm
-                  aux(i_fsphi,i,j) = min(1.d0,Fproj*rho/max(tau,1.d-16))
+            !Find if failure for j'th cell edge (y-direction, i column)
+            !Force in normal direction (y)
+            call calc_interface_force(Fdy,gz,h,hB,b,bB,dx,0.d0)
+            
+            !Force in y-direction at 4 edges connected to i'th cell edge
+            call calc_interface_force(FdxL,gz,h,hL,b,bL,dx,theta)
+            call calc_interface_force(FdxBL,gz,hBL,hB,bBL,bB,dx,theta)
+            call calc_interface_force(FdxR,gz,hR,h,bR,b,dx,theta)
+            call calc_interface_force(FdxBR,gz,hBR,hB,bBR,bB,dx,theta)
+            
 
-                  ! DIG: ensure that very low m does not contribute to static friction.
-                  ! KRB thinks that this might be the right place to handle.
-
-               else
-                  !net force is in same direction as friction
-                  !if nearly balanced steady state not due to friction
-                  !no splitting, integrate friction in src
-                  aux(i_fsphi,i,j) = 0.d0
-               endif
-
+            Fxmax2 = max(FdxL**2,max(FdxBL**2,max(FdxR**2,FdxBR**2)))
+            Fmag = sqrt(Fxmax2 + Fdy**2)
+            Fresist = 0.5d0*(tauB/(1.d-14+rhoB) + tau/(1.d-14+rho)*dy)
+            if (Fmag.gt.Fresist) then
+                aux(i_taudir_y,i,j) = dy
+                aux(i_fsphi,i,j) = min(aux(i_fsphi,i,j), Fresist/Fmag)
             else
-               !aux now have cell edge interpretation in Riemann solver
-               !friction should oppose net force. resolve in Riemann solver
-               if ((FxL**2+Fy**2)>0.d0) then
-                  aux(i_taudir_x,i,j) = -dx*FxL/sqrt(FxL**2+Fy**2)
-               else
-                  aux(i_taudir_x,i,j) = dx*1.d0
-               endif
-
-               if ((Fx**2+FyL**2)>0.d0) then
-                  aux(i_taudir_y,i,j) = -dy*FyL/sqrt(Fx**2+FyL**2)
-               else
-                  !There is no motion or net force. Resolve in src after Riemann
-                  aux(i_taudir_y,i,j) = dy*1.d0
-               endif
-
-               ! Calculate factor of safety
-               if ((aux(i_taudir_y,i,j)**2 + aux(i_taudir_x,i,j)**2)>0.d0) then
-                  aux(i_fsphi,i,j) = 1.d0
-               else
-                  aux(i_fsphi,i,j) = 0.d0
-               endif
+                aux(i_taudir_y,i,j) = 0.d0
+                aux(i_fsphi,i,j) = min(aux(i_fsphi,i,j), Fresist/(Fmag+1.d-16))
             endif
 
          enddo
@@ -887,6 +906,38 @@ subroutine calc_pmin(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
          write(*,*) '--------------------------------------------'
       endif
    end subroutine calc_pmin
+
+    !========================================
+    !calc_interface_force
+    !========================================
+    !calculate the driving force at a cell edge between arbitrary 
+    !(static) left and right states
+    !=======================================
+
+    subroutine calc_interface_force(Fx,gz,hR,hL,bR,bL,dx,theta)
+
+        implicit none
+        
+        !Input/Output
+        double precision :: gz,hR,hL,bR,bL,dx,theta,Fx
+
+        !Locals
+        double precision :: bLdx,bRdx,etaL,etaR
+
+        etaL = hL+bL
+        etaR = hR+bR
+        !adjust b for db/dx term if wet/dry data
+        if (hL<dry_tolerance) then
+            bLdx = min(etaL,etaR)
+        endif
+        if (h<dry_tolerance) then
+            bRdx = min(etaL,eta)
+        endif
+        Fx = -.5d0*gz*(hR**2-hL**2)-gz*0.5*(hL+hR)*(bRdx-bLdx-dx*tan(theta))
+
+
+
+    end subroutine calc_interface_force
 
 
 end module digclaw_module
