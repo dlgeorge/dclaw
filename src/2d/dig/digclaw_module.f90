@@ -498,7 +498,6 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
       double precision :: hB,huB,hvB,hmB,pB,hchiB,bB,etaB
       double precision :: hT,huT,hvT,hmT,pT,hchiT,bT,etaT
       double precision :: hTL,huTL,hvTL,hmTL,pTL,hchiTL,bTL,etaTL
-      double precision :: hTR,huTR,hvTR,hmTR,pTR,hchiTR,bTR,etaTR
       double precision :: hBL,huBL,hvBL,hmBL,pBL,hchiBL,bBL,etaBL
       double precision :: hBR,huBR,hvBR,hmBR,pBR,hchiBR,bBR,etaBR
 
@@ -508,14 +507,14 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
       double precision :: uB,vB,mB,chiB,rhoB
       double precision :: uT,vT,mT,chiT,rhoT
       double precision :: uTL,vTL,mTL,chiTL,rhoTL
-      double precision :: uTR,vTR,mTR,chiTR,rhoTR
       double precision :: uBL,vBL,mBL,chiBL,rhoBL
       double precision :: uBR,vBR,mBR,chiBR,rhoBR
       double precision :: theta
-      double precision :: tau,rho,alphainv
+      double precision :: tau,rho,alphainv,tauB,tauL
       double precision :: tanpsi,kperm,m_eq
       double precision :: Fxmax2,Fymax2,Fmag,Fresist
       double precision :: FdyBL,FdyB,FdyTL,FdyT,FdxL,FdxBL,FdxR,FdxBR
+      double precision :: Fdx,Fdy
 
       integer :: i,j
 
@@ -609,7 +608,7 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             endif
 
             ! if any cells in stencil have motion allow failure
-            if ((hu**2+huL**2+huB**2+huT**2+huBL**2+huTL**2+hv**2+hvL**2+hvB**2+hvT**2+hvBL**2+hvTL**2)>0.d0 then
+            if ((hu**2+huL**2+huB**2+huT**2+huBL**2+huTL**2+hv**2+hvL**2+hvB**2+hvT**2+hvBL**2+hvTL**2)>0.d0) then
                aux(i_taudir_x,i,j) = dx
                cycle
             endif
@@ -734,7 +733,7 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             endif
 
             ! if any cells in stencil have motion allow failure
-            if ((hu**2+huL**2+huR**2+huBL**2+huB**2+huBR**2+hv**2+hvL**2+hvR**2+hvBL**2+hvB**2+hvBR**2)>0.d0 then
+            if ((hu**2+huL**2+huR**2+huBL**2+huB**2+huBR**2+hv**2+hvL**2+hvR**2+hvBL**2+hvB**2+hvBR**2)>0.d0) then
                aux(i_taudir_y,i,j) = dy
                cycle
             endif
@@ -929,9 +928,13 @@ subroutine calc_pmin(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
         !adjust b for db/dx term if wet/dry data
         if (hL<dry_tolerance) then
             bLdx = min(etaL,etaR)
+        else
+            bLdx = bL
         endif
-        if (h<dry_tolerance) then
-            bRdx = min(etaL,eta)
+        if (hR<dry_tolerance) then
+            bRdx = min(etaL,etaR)
+        else
+            bRdx = bR
         endif
         Fx = -.5d0*gz*(hR**2-hL**2)-gz*0.5*(hL+hR)*(bRdx-bLdx-dx*tan(theta))
 

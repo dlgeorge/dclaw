@@ -33,6 +33,7 @@ c-----------------------------------------------------------------------
       double precision hL,hR,huL,huR,hvL,hvR,hmL,hmR,pL,pR
       double precision bL,bR,uL,uR,vL,vR,mL,mR,chiL,chiR,seg_L,seg_R
       double precision thetaL,thetaR,phiL,phiR
+      double precision phiL_effective, phiR_effective
       double precision taudirL,taudirR,fsL,fsR
       logical wallprob
 
@@ -48,9 +49,9 @@ c-----------------------------------------------------------------------
       double precision R(0:2,1:3),del(0:4) !A(3,3)
       double precision beta(3)
       double precision rho,rhoL,rhoR,tauL,tauR,tau,gzL,gzR
-      double precision tanpsi
+      double precision tanpsi, delbf, deldelhf,huedge
       double precision kperm,m_eq,alphainv
-      double precision theta,gamma,eps
+      double precision theta,gamma,eps,taudirRe
       double precision sL,sR,sRoe1,sRoe2,sE1,sE2,uhat,chat
       double precision delb,s1m,s2m,hm,criticaltol,criticaltol_2
       double precision s1s2bar,s1s2tilde,hbar,source2dx,veltol1,veltol2
@@ -58,7 +59,7 @@ c-----------------------------------------------------------------------
       double precision hstarHLL,deldelh,drytol,gz,geps,tausource
       double precision raremin,raremax,rare1st,rare2st,sdelta
       double precision gammaL,gammaR,theta1,theta2,theta3,vnorm
-      double precision alpha_seg,a,b,c,ctn,hsmallest
+      double precision alpha_seg,a,b,c,ctn,hsmallest,uedge,vedge
       logical sonic,rare1,rare2
       logical rarecorrectortest,rarecorrector
 
@@ -188,10 +189,51 @@ c     !determine the middle entropy corrector wave------------------------
       delb=(bR-bL)!#kappa
 
       vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
+      if (sw(1).gt.0.d0) then
+        uedge = uL
+        huedge = huL
+      elseif (sw(3).lt.0.d0) then
+        uedge = uR
+        huedge = huR
+      else
+        uedge = hustarHLL/hstarHLL
+        huedge = hustarHLL
+      endif
+      if (uedge >0.d0) then
+        vedge = vL
+      elseif (uedge<0.d0) then
+        vedge = vR
+      else
+        vedge = 0.5d0*(vL+vR)
+      endif
+      if (abs(uedge).gt.0.d0) then
+        taudirRe = taudirR*uedge/(sqrt(uedge**2 + vedge**2))
+      else
+        taudirRe = 0.d0
+      endif
       !if (vnorm.gt.0.d0.and..false.) then
-      !  delb = delb - 0.5d0*(taudirR*tan(phiR)+taudirL*tan(phiL))
-      !endif
+      !note: if a static riemann problem or no failure taudirR=0, else = dx
+      if (hR>drytol) then
+        phiR_effective = atan(max(0.d0,(1.d0 - pR/(rhoR*gz*hR)))
+     &       *tan(phiR))
+      else
+        phiR_effective = 0.d0
+      endif
 
+      if (hL>drytol) then
+        phiL_effective = atan(max(0.d0,(1.d0 - pL/(rhoL*gz*hL)))
+     &   *tan(phiL))
+      else
+        phiL_effective = 0.d0
+      endif
+      !delbf = taudirRe*tan(0.5d0*(phiR_effective+phiL_effective))
+      delb = delb + taudirRe*tan(0.5d0*(phiR+phiL))
+      !endif
+        if (taudirR.gt.0.d0.and..false.) then
+      write(*,*) 'taudirR, taudirRe', taudirR,taudirRe
+      write(*,*) 'phiR, phiR_effective', phiR*180./3.14, 
+     & phiR_effective*180./3.14
+        endif
       !determine ss-wave
       hbar =  0.5d0*(hL+hR)
       s1s2bar = 0.25d0*(uL+uR)**2- gz*hbar
@@ -295,7 +337,12 @@ c     !find if sonic problem (or very far from steady state)
      &     max(s1s2_ratio,min(hL/hbar,hR/hbar)))
          !deldelh = delb*((1.d0-ss_delta)*(gz*hbar/s1s2bar)-ss_delta)
       deldelh = delb*gz*hbar/s1s2bar
-      
+      deldelhf = delbf*gz*hbar/s1s2bar
+      deldelhf = dsign(min(abs(deldelhf),
+     &        abs(huedge*(sw(3)-sw(1))/(sw(1)*sw(3)+1.d-14))),deldelhf)
+      delbf = deldelhf*s1s2bar/(hbar*gz)
+      deldelh = deldelh + deldelhf
+      delb = delb + delbf
          !source2dx = -gz*hbar*delb*min(s1s2tilde/s1s2bar,1.d0)
       !endif
       source2dx = -gz*hbar*delb*((1.d0-ss_delta)*s1s2_ratio + ss_delta)
@@ -376,7 +423,7 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
          ! until fixed, bed_normal = 1 yields error in make .data (1/30/24)
       !endif
 
-      !vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
+      vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
       if (vnorm>0.0d0) then
 
          tausource =  0.0d0 !src2 handles friction.
@@ -385,10 +432,10 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
          
 
 
-      elseif (0.5d0*abs(taudirR*tauR/rhoR + tauL*taudirL/rhoL)
-     &      .gt.abs(del(2) - source2dx)) then
+       !elseif (0.5d0*abs(taudirR*tauR/rhoR + tauL*taudirL/rhoL)
+       !&      .gt.abs(del(2) - source2dx)) then
 
-
+       elseif (abs(taudirR).le.1.d-14) then
 !       DIG Symmetry: should this be RRR, LLL? It is symmetric in the line above
 !       that is commented out. Leaving as is b/c it is the same in dclaw4 and dclaw5
 !       KRB&MJB - 1/12/24
@@ -400,8 +447,9 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
          del(4) = 0.0d0
       else
          ! failure of static material
-         tausource = 0.5d0*((taudirR*tauR/rhoR)+(tauL*taudirL/rhoL))!*dx
-         tausource = dsign(tausource,del(2)-source2dx)
+         !tausource = 0.5d0*((taudirR*tauR/rhoR)+(tauL*taudirL/rhoL))!*dx
+         !tausource = dsign(tausource,del(2)-source2dx)
+          tausource = 0.d0
       endif
 
       if (wallprob) then
