@@ -160,7 +160,7 @@
 
             if (hvnorm0>0.d0) then
                !integrate dynamic friction !DIG: TO DO - move dynamic friction to Riemann solver
-               vnorm = max(0.d0,vnorm - dt*tau/rhoh) !exact solution for Coulomb friction
+               !vnorm = max(0.d0,vnorm - dt*tau/rhoh) !exact solution for Coulomb friction
                vnorm = vnorm*exp(-(1.d0-m)*2.0d0*mu*dt/(h*rhoh)) !exact solution (prior to h change) for effective viscous friction
                ! velocity determined, calculate directions etc. from vnorm
                hvnorm = h*vnorm

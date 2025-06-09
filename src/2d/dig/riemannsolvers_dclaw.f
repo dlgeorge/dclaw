@@ -33,7 +33,6 @@ c-----------------------------------------------------------------------
       double precision hL,hR,huL,huR,hvL,hvR,hmL,hmR,pL,pR
       double precision bL,bR,uL,uR,vL,vR,mL,mR,chiL,chiR,seg_L,seg_R
       double precision thetaL,thetaR,phiL,phiR
-      double precision phiL_effective, phiR_effective
       double precision taudirL,taudirR,fsL,fsR
       logical wallprob
 
@@ -48,10 +47,11 @@ c-----------------------------------------------------------------------
       double precision det1,det2,det3,determinant
       double precision R(0:2,1:3),del(0:4) !A(3,3)
       double precision beta(3)
+      double precision phiL_effective, phiR_effective,phi_eff
       double precision rho,rhoL,rhoR,tauL,tauR,tau,gzL,gzR
       double precision tanpsi, delbf, deldelhf,huedge
-      double precision kperm,m_eq,alphainv
-      double precision theta,gamma,eps,taudirRe
+      double precision kperm,m_eq,alphainv,s1s2_denom
+      double precision theta,gamma,eps,taudirUfrac,hustarHLLn
       double precision sL,sR,sRoe1,sRoe2,sE1,sE2,uhat,chat
       double precision delb,s1m,s2m,hm,criticaltol,criticaltol_2
       double precision s1s2bar,s1s2tilde,hbar,source2dx,veltol1,veltol2
@@ -188,52 +188,6 @@ c     !determine the middle entropy corrector wave------------------------
 
       delb=(bR-bL)!#kappa
 
-      vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
-      if (sw(1).gt.0.d0) then
-        uedge = uL
-        huedge = huL
-      elseif (sw(3).lt.0.d0) then
-        uedge = uR
-        huedge = huR
-      else
-        uedge = hustarHLL/hstarHLL
-        huedge = hustarHLL
-      endif
-      if (uedge >0.d0) then
-        vedge = vL
-      elseif (uedge<0.d0) then
-        vedge = vR
-      else
-        vedge = 0.5d0*(vL+vR)
-      endif
-      if (abs(uedge).gt.0.d0) then
-        taudirRe = taudirR*uedge/(sqrt(uedge**2 + vedge**2))
-      else
-        taudirRe = 0.d0
-      endif
-      !if (vnorm.gt.0.d0.and..false.) then
-      !note: if a static riemann problem or no failure taudirR=0, else = dx
-      if (hR>drytol) then
-        phiR_effective = atan(max(0.d0,(1.d0 - pR/(rhoR*gz*hR)))
-     &       *tan(phiR))
-      else
-        phiR_effective = 0.d0
-      endif
-
-      if (hL>drytol) then
-        phiL_effective = atan(max(0.d0,(1.d0 - pL/(rhoL*gz*hL)))
-     &   *tan(phiL))
-      else
-        phiL_effective = 0.d0
-      endif
-      !delbf = taudirRe*tan(0.5d0*(phiR_effective+phiL_effective))
-      delb = delb + taudirRe*tan(0.5d0*(phiR+phiL))
-      !endif
-        if (taudirR.gt.0.d0.and..false.) then
-      write(*,*) 'taudirR, taudirRe', taudirR,taudirRe
-      write(*,*) 'phiR, phiR_effective', phiR*180./3.14, 
-     & phiR_effective*180./3.14
-        endif
       !determine ss-wave
       hbar =  0.5d0*(hL+hR)
       s1s2bar = 0.25d0*(uL+uR)**2- gz*hbar
@@ -262,14 +216,37 @@ c     !find if sonic problem (or very far from steady state)
       !   sonic=.true.
       !endif
 
+      ! find effective friction at interface
+      ! note: this is a workaround for pressure/effective stress
+      ! a more rigorous approach is under development but would involve
+      ! finding exact steady state solutions when d(p/rho*g*h)/dx neq 0.d0
+      if (hR>drytol) then
+        phiR_effective = atan(max(0.d0,(1.d0 - pR/(rhoR*gz*hR)))
+     &       *tan(phiR))
+      else
+        phiR_effective = 0.d0
+      endif
+
+      if (hL>drytol) then
+        phiL_effective = atan(max(0.d0,(1.d0 - pL/(rhoL*gz*hL)))
+     &      *tan(phiL))
+      else
+        phiL_effective = 0.d0
+      endif
+      phi_eff = 0.5*phiL_effective + phiR_effective
+
       ! determine if steady state Riemann invariants are close or far
-      ! if far critical excess ratio of far left and right states not good approx at interface
-      ! convex combination of 1 and critical excess ratio using metric (1 for non-steady data)
+      ! if far, critical excess ratio, s1s2_ratio, evaluated using
+      ! far left and right states (qR,qL) are not a good approx at interface
+      ! because cell edge values are not necessarily near qL and qR 
+      ! ss_delta = 0.0 => steady state data. ss_delta = 1.0 => far from steady state
       ! replaces approach where near sonic states are tested. better generally I think
+      ! invariants for steady states are hu and 0.5u**2 + g*eta + x*sgn(u)tanphi
       ss_delta = dabs(huR - huL)/(dabs(huL)+dabs(huR)) !1 if opposite sign (non-steady)
       ! 2nd Riemann invariant
       ss_delta = max(ss_delta,
-     &  dabs(0.5*uR**2 + gz*hR +gz*bR - 0.5*uL**2 - gz*hL -gz*bL )/
+     &  dabs(0.5*uR**2 + gz*hR +gz*bR - 0.5*uL**2 - gz*hL -gz*bL 
+     &          + gz*taudirR*tan(phi)(dsign(1.d0,uR)-dsign(1.d0,uL))/
      &  (dabs(0.5*uR**2 +gz*hR)+dabs(0.5*uL**2 +gz*hL)+dabs(bR-bL)))
       ! transcritical (metric either 1 or zero)
        ss_delta = max(ss_delta,
@@ -321,6 +298,14 @@ c     !find if sonic problem (or very far from steady state)
        !  ss_delta = 1.d0
       !endif
 
+      ! if actual ubar**2-ghbar at interface = 0
+      ! then cant be a true solution if delb !=0
+      ! true solution in this case could be stationary shock
+      ! at interface, but only if delb!=0.
+      ! but s1s2bar is only approximation using qR,qL
+      ! if close to zero (near critical flow) use standard averages
+      ! following set of s1s2bar just prevents divide by 0
+      ! s1s2_ratio won't use s1s2bar because ss_delta=1=> s1s2_ratio = 1
       if (dabs(s1s2bar).le.ctn**2) then
         s1s2bar = dsign(ctn**2,s1s2bar)
         !s1s2bar = min(uL**2-gz*hL,uR**2-gz*hR)
@@ -334,20 +319,57 @@ c     !find if sonic problem (or very far from steady state)
       !else
       s1s2_ratio = max(0.d0,s1s2tilde/s1s2bar)
       s1s2_ratio = min(max(hL/hbar,hR/hbar),
-     &     max(s1s2_ratio,min(hL/hbar,hR/hbar)))
+     &     max(s1s2_ratio,min(hL/hbar,hR/hbar))) !bounds |source term| in (g*min(h)delb,g*max(h)delb)
          !deldelh = delb*((1.d0-ss_delta)*(gz*hbar/s1s2bar)-ss_delta)
-      deldelh = delb*gz*hbar/s1s2bar
-      deldelhf = delbf*gz*hbar/s1s2bar
-      deldelhf = dsign(min(abs(deldelhf),
-     &        abs(huedge*(sw(3)-sw(1))/(sw(1)*sw(3)+1.d-14))),deldelhf)
-      delbf = deldelhf*s1s2bar/(hbar*gz)
-      deldelh = deldelh + deldelhf
-      delb = delb + delbf
-         !source2dx = -gz*hbar*delb*min(s1s2tilde/s1s2bar,1.d0)
-      !endif
-      source2dx = -gz*hbar*delb*((1.d0-ss_delta)*s1s2_ratio + ss_delta)
-      deldelh = ((1.d0-ss_delta)*deldelh - ss_delta*delb)
+
+      s1s2_ratio = ((1.d0-ss_delta)*s1s2_ratio + ss_delta)
+      s1s2_denom = ((1.d0-ss_delta)*(1.d0/s1s2bar) 
+     &        + ss_delta*(1.d0/(-gz*hbar)))
+      deldelh = delb*gz*hbar*s1s2_denom !jump in h at interface from bathy not friction
+      source2dx = -gz*hbar*delb*s1s2_ratio !source from bathy no friction yet
       
+      vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
+      !hu at interface not considering friction. friction should oppose this velocity
+      !if this is a static problem (vnorm=0) then friction opposes net force and determined further below
+      hustarHLLn = (dels*huL + sw(1)*sw(3)*(hR-hL-deldelh)
+     &    +sw(1)*(huL-huR-source2dx))/dels
+      if (vnorm.gt0.d0) then
+        if (sw(1).gt.0.d0) then
+          uedge = uL
+          huedge = huL
+        elseif (sw(3).lt.0.d0) then
+          uedge = uR
+          huedge = huR
+        else
+          uedge = hustarHLLn/hstarHLL
+          huedge = hustarHLL
+        endif
+        if (uedge >0.d0) then
+          vedge = vL
+        elseif (uedge<0.d0) then
+          vedge = vR
+        else
+          vedge = 0.5d0*(vL+vR)
+        endif
+        if (abs(uedge).gt.0.d0) then
+          taudirUfrac = taudirR*uedge/(sqrt(uedge**2 + vedge**2))
+        else
+          taudirUfrac = 0.d0
+        endif
+        delbf = taudirUfrac*tan(0.5d0*(phiR_effective+phiL_effective))
+        deldelhf = delbf*gz*hbar*s1s2_denom
+        if (abs(deldelhf).gt.0.d0) then
+            delbf = deldelhf/(gz*hbar*s1s2_denom)
+        else
+            delbf = 0.d0
+        endif
+      else
+        delbf = 0.d0
+        deldelhf = 0.d0
+      endif
+
+        deldelh = deldelh + deldelhf
+        source2dx = source2dx -gz*hbar*delbf*s1s2_ratio
        !source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb)) 
        !source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
 
@@ -423,33 +445,23 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
          ! until fixed, bed_normal = 1 yields error in make .data (1/30/24)
       !endif
 
-      vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
-      if (vnorm>0.0d0) then
+      if (vnorm.le.0.d0) then !second check shouldn't be needed but in case rounding error
+        ! static problem
+        ! 2 possibilities: friction should not be larger than net force in x-direction. 
+        ! taudirR has already been reduced to dx Fx/|F| in module
+        ! friction can be less than Fx but it cannot be larger than Fx
+        ! otherwise Riemann problem would fail in the wrong direction
+        if (abs(taudirR*gz*tan(phi_eff)).lt.abs(del(2)-source2dx) then
+            !failure and friction opposes failure
+            source2dx = source2x - 
+     &      dsign(1.d0,del(2)-source2x)*taudirR*gz*tan(phi_eff)
 
-         tausource =  0.0d0 !src2 handles friction.
-         !gh tan\phi treated with b (b ~ xtan\phi). need -ptan\phi
-         !tausource = 0.5d0*((taudirR*pR/rhoR)+(taudirL*pL/rhoL))
-         
-
-
-       !elseif (0.5d0*abs(taudirR*tauR/rhoR + tauL*taudirL/rhoL)
-       !&      .gt.abs(del(2) - source2dx)) then
-
-       elseif (abs(taudirR).le.1.d-14) then
-!       DIG Symmetry: should this be RRR, LLL? It is symmetric in the line above
-!       that is commented out. Leaving as is b/c it is the same in dclaw4 and dclaw5
-!       KRB&MJB - 1/12/24
-
-         ! no failure of static material
-         tausource = del(2) - source2dx
-         del(1) = 0.0d0
-         del(0) = 0.0d0
-         del(4) = 0.0d0
-      else
-         ! failure of static material
-         !tausource = 0.5d0*((taudirR*tauR/rhoR)+(tauL*taudirL/rhoL))!*dx
-         !tausource = dsign(tausource,del(2)-source2dx)
-          tausource = 0.d0
+        else 
+            !friction opposes net force
+            del(1) = 0.0d0
+            source2dx = del(2)
+            del(0) = 0.0d0
+            del(4) = 0.0d0
       endif
 
       if (wallprob) then
