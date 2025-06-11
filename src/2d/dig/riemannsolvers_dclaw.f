@@ -47,6 +47,7 @@ c-----------------------------------------------------------------------
       double precision det1,det2,det3,determinant
       double precision R(0:2,1:3),del(0:4) !A(3,3)
       double precision beta(3)
+      double precision pratL,pratR,tan_phi_max,source2dxf
       double precision phiL_effective, phiR_effective,phi_eff
       double precision rho,rhoL,rhoR,tauL,tauR,tau,gzL,gzR
       double precision tanpsi, delbf, deldelhf,huedge
@@ -221,19 +222,20 @@ c     !find if sonic problem (or very far from steady state)
       ! a more rigorous approach is under development but would involve
       ! finding exact steady state solutions when d(p/rho*g*h)/dx neq 0.d0
       if (hR>drytol) then
-        phiR_effective = atan(max(0.d0,(1.d0 - pR/(rhoR*gz*hR)))
-     &       *tan(phiR))
+        pratR = max(min(1.d0 - pR/(rhoR*gz*hR),1.d0),0.d0)
       else
-        phiR_effective = 0.d0
+        pratR = max(min(1.d0 - pL/(rhoL*gz*hL),1.d0),0.d0)
       endif
 
       if (hL>drytol) then
-        phiL_effective = atan(max(0.d0,(1.d0 - pL/(rhoL*gz*hL)))
-     &      *tan(phiL))
+        pratL = max(min(1.d0 - pL/(rhoL*gz*hL),1.d0),0.d0)
       else
-        phiL_effective = 0.d0
+        pratL = max(min(1.d0 - pR/(rhoR*gz*hR),1.d0),0.d0)
       endif
-      phi_eff = 0.5*phiL_effective + phiR_effective
+
+       phiL_effective = atan(max(0.d0,(1.d0-pratL))*tan(phiR))
+       phiR_effective = atan(max(0.d0,(1.d0 - pratR))*tan(phiR))
+       phi_eff = max(0.5d0*(phiL_effective + phiR_effective),0.d0)
 
       ! determine if steady state Riemann invariants are close or far
       ! if far, critical excess ratio, s1s2_ratio, evaluated using
@@ -242,20 +244,24 @@ c     !find if sonic problem (or very far from steady state)
       ! ss_delta = 0.0 => steady state data. ss_delta = 1.0 => far from steady state
       ! replaces approach where near sonic states are tested. better generally I think
       ! invariants for steady states are hu and 0.5u**2 + g*eta + x*sgn(u)tanphi
-      ss_delta = dabs(huR - huL)/(dabs(huL)+dabs(huR)) !1 if opposite sign (non-steady)
+      if ((dabs(huL)+dabs(huR)).gt.0.d0) then
+        ss_delta = dabs(huR - huL)/(dabs(huL)+dabs(huR)) !1 if opposite sign (non-steady)
+      else
+        ss_delta = 0.d0
+      endif
       ! 2nd Riemann invariant
       ss_delta = max(ss_delta,
      &  dabs(0.5*uR**2 + gz*hR +gz*bR - 0.5*uL**2 - gz*hL -gz*bL 
-     &          + gz*taudirR*tan(phi)(dsign(1.d0,uR)-dsign(1.d0,uL))/
-     &  (dabs(0.5*uR**2 +gz*hR)+dabs(0.5*uL**2 +gz*hL)+dabs(bR-bL)))
+     &   + gz*taudirR*tan(phi_eff)*0.5d0*
+     &     (dsign(1.d0,uR)+dsign(1.d0,uL)))/
+     &   (dabs(0.5*uR**2 +gz*hR)+dabs(0.5*uL**2 +gz*hL)+dabs(bR-bL)
+     &    + dabs(gz*taudirR*tan(phi_eff))))
       ! transcritical (metric either 1 or zero)
        ss_delta = max(ss_delta,
-     &    dabs(dsign(1.d0,(uR**2-gz*hR))-dsign(1.d0,(uL**2-gz*hL)))/
-     &     (dabs(dsign(1.d0,(uR**2-gz*hR)))
-     &    + dabs(dsign(1.d0,(uL**2-gz*hL)))))
+     &  dabs(dsign(1.d0,(uR**2-gz*hR))-dsign(1.d0,(uL**2-gz*hL))))/2.d0
         !fix rounding error if any ss_delta in [0,1]
        ss_delta = max(0.d0, min(ss_delta,1.d0))
-
+       !ss_delta = 1.d0
       ! bound jump in h at interface, positivity constraint, also constrains source term
       sonic = .false.
       ctn = criticaltol/dsqrt(gz*hbar) !normalize the tolerance to depth (very small depths not necessarily near critical)
@@ -274,16 +280,19 @@ c     !find if sonic problem (or very far from steady state)
             s1s2bar = max(s1s2bar,0.d0)
         endif 
       elseif (sw(1).lt.-ctn*0.d0.and.sw(3).gt.
-     &                          ctn) then
+     &                          0.d0*ctn) then
          if (hstarHLL.gt.drytol) then
             s1s2bar=min(sw(1)*gz*hbar*delb/(hstarHLL*dels),
      &           min(s1s2bar,sw(3)*gz*hbar*delb/(hstarHLL*dels)))
          else 
-            s1s2bar = min(s1s2bar,0.d0)
+            !s1s2bar = min(s1s2bar,0.d0)
+            s1s2bar = min(s1s2bar,min(uL**2-gz*hL,uR**2-gz*hR)) !for either shock or rare we want subcrit. estimate
+            ss_delta = 1.d0
          endif
       else
         s1s2bar = min(uL**2-gz*hL,uR**2-gz*hR) !for either shock or rare we want subcrit. estimate
         sonic = .true.
+        ss_delta = 1.d0
       endif
 
       !if (s1s2bar*sw(1)*sw(3).le.criticaltol**4) then
@@ -327,13 +336,15 @@ c     !find if sonic problem (or very far from steady state)
      &        + ss_delta*(1.d0/(-gz*hbar)))
       deldelh = delb*gz*hbar*s1s2_denom !jump in h at interface from bathy not friction
       source2dx = -gz*hbar*delb*s1s2_ratio !source from bathy no friction yet
+      !source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb)) 
+      !source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
       
       vnorm = sqrt(uR**2 + uL**2 + vR**2 + vL**2)
       !hu at interface not considering friction. friction should oppose this velocity
       !if this is a static problem (vnorm=0) then friction opposes net force and determined further below
       hustarHLLn = (dels*huL + sw(1)*sw(3)*(hR-hL-deldelh)
-     &    +sw(1)*(huL-huR-source2dx))/dels
-      if (vnorm.gt0.d0) then
+     &    +sw(1)*(huL-huR+source2dx))/dels
+      if (vnorm.gt.veltol1) then
         if (sw(1).gt.0.d0) then
           uedge = uL
           huedge = huL
@@ -342,7 +353,7 @@ c     !find if sonic problem (or very far from steady state)
           huedge = huR
         else
           uedge = hustarHLLn/hstarHLL
-          huedge = hustarHLL
+          huedge = hustarHLLn
         endif
         if (uedge >0.d0) then
           vedge = vL
@@ -351,27 +362,35 @@ c     !find if sonic problem (or very far from steady state)
         else
           vedge = 0.5d0*(vL+vR)
         endif
-        if (abs(uedge).gt.0.d0) then
+        if (abs(uedge).gt.1.d-6) then
           taudirUfrac = taudirR*uedge/(sqrt(uedge**2 + vedge**2))
         else
           taudirUfrac = 0.d0
         endif
-        delbf = taudirUfrac*tan(0.5d0*(phiR_effective+phiL_effective))
+
+        tan_phi_max = dabs(huedge)/
+     &       max(abs(gz*hbar*s1s2_ratio*taudirUfrac),1.d-12)
+        tan_phi_max = 0.99999d0*tan_phi_max
+        !write(*,*) 'tan_phi_max,tan(phi_eff)',tan_phi_max,tan(phi_eff)
+        delbf = taudirUfrac*min(tan(phi_eff),tan_phi_max)
         deldelhf = delbf*gz*hbar*s1s2_denom
-        if (abs(deldelhf).gt.0.d0) then
-            delbf = deldelhf/(gz*hbar*s1s2_denom)
-        else
+        if (abs(deldelhf).eq.0.d0) then
             delbf = 0.d0
         endif
       else
         delbf = 0.d0
         deldelhf = 0.d0
       endif
-
+        !write(*,*) 'delbf,deldelhf', delbf,deldelhf
+        !write(*,*) 'ss_delta,taudir', ss_delta,taudirUfrac,taudirR
         deldelh = deldelh + deldelhf
-        source2dx = source2dx -gz*hbar*delbf*s1s2_ratio
-       !source2dx=min(source2dx,gz*max(-hL*delb,-hR*delb)) 
-       !source2dx=max(source2dx,gz*min(-hL*delb,-hR*delb))
+        source2dxf = - gz*hbar*delbf*s1s2_ratio
+        if (abs(source2dxf).gt.abs(huedge)) then
+            write(*,*) 'source2dxf,huedge',source2dxf,huedge
+            write(*,*) 's1s2_ratio',s1s2_ratio
+            write(*,*) 'ratio:', abs(source2dxf)-abs(huedge)
+        endif
+        !source2dx = source2dx + source2dxf
 
       ! if (dabs(u).le.veltol2) then
       !   source2dx=-hbar*gz*delb
@@ -391,17 +410,16 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
       
       if (sE1.lt.-ctn.and.sE2.gt.ctn) then
         hsmallest = 0.d0*((hustarHLL)**2/(2.d0*gz))**(1.d0/3.d0) 
-        hmin = hstarHLL -hsmallest!small depth for energy constraint
-        hmin = max(0.d0,hmin)
-         deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE2)
-         deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE1)
+        hmin = max(hstarHLL -hsmallest,0.d0)!small depth for energy constraint
+        deldelh = min(deldelh,hmin*(sE2-sE1)/sE2)
+        deldelh = max(deldelh,hmin*(sE2-sE1)/sE1)
       elseif (sE1.ge.ctn) then
-         deldelh = min(deldelh,hstarHLL*(sE2-sE1)/sE1)
-         deldelh = max(deldelh,-hL)
+        deldelh = min(deldelh,hmin*(sE2-sE1)/sE1)
+        deldelh = max(deldelh,-hL)
             
       elseif (sE2.le.-ctn) then
-         deldelh = min(deldelh,hR)
-         deldelh = max(deldelh,hstarHLL*(sE2-sE1)/sE2)
+        deldelh = min(deldelh,hR)
+        deldelh = max(deldelh,hmin*(sE2-sE1)/sE2)
       endif
 
 
@@ -427,7 +445,7 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
       endif
 
       !determine del
-      del(0) = hR- hL - deldelh
+      del(0) = hR- hL 
       del(1) = huR - huL
       del(2) = hR*uR**2 + 0.5d0*kappa*gz*hR**2 -
      &      (hL*uL**2 + 0.5d0*kappa*gz*hL**2)
@@ -445,30 +463,35 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
          ! until fixed, bed_normal = 1 yields error in make .data (1/30/24)
       !endif
 
-      if (vnorm.le.0.d0) then !second check shouldn't be needed but in case rounding error
+      if (vnorm.le.veltol1) then 
         ! static problem
         ! 2 possibilities: friction should not be larger than net force in x-direction. 
         ! taudirR has already been reduced to dx Fx/|F| in module
         ! friction can be less than Fx but it cannot be larger than Fx
         ! otherwise Riemann problem would fail in the wrong direction
-        if (abs(taudirR*gz*tan(phi_eff)).lt.abs(del(2)-source2dx) then
+        if (abs(hbar*taudirR*gz*tan(phi_eff))
+     &            .lt.abs(del(2)-source2dx)) then
             !failure and friction opposes failure
-            source2dx = source2x - 
-     &      dsign(1.d0,del(2)-source2x)*taudirR*gz*tan(phi_eff)
-
+            delbf = dsign(1.d0,del(2)-source2dx)*
+     &                taudirR*tan(phi_eff)
+            source2dxf = - gz*hbar*delbf
+            deldelhf = -delbf
+            deldelh = deldelh + deldelhf
         else 
-            !friction opposes net force
+            !friction opposes net force, no waves
+            del(0) = deldelh
             del(1) = 0.0d0
             source2dx = del(2)
-            del(0) = 0.0d0
+            source2dxf = 0.d0
             del(4) = 0.0d0
+        endif
       endif
 
-      if (wallprob) then
-         tausource = 0.0d0
-      endif
-
-      del(2) = del(2) - source2dx  - tausource
+      !if (wallprob) then
+      !   tausource = 0.0d0
+      !endif
+      del(0) = del(0) - deldelh 
+      del(2) = del(2) - source2dx -source2dxf
 
       !--------theta--------------------
       if (sw(1).ge.0.d0) then
@@ -511,37 +534,6 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
      &      (a*b - a*c - b*c + c**2)
         endif
 
-
-      !gauss routine replaces del with beta and R with it's inverse
-      !want to keep R, so replacing with A
-      !do mw=0,2
-      !   beta(mw+1) = del(mw)
-      !   do m=0,2
-      !     A(m+1,mw+1)=R(m,mw+1)
-      !   enddo
-      !enddo
-
-c     !Determine determinant of eigenvector matrix========
-      !det1=A(1,1)*(A(2,2)*A(3,3)-A(2,3)*A(3,2))
-      !det2=A(1,2)*(A(2,1)*A(3,3)-A(2,3)*A(3,1))
-      !det3=A(1,3)*(A(2,1)*A(3,2)-A(2,2)*A(3,1))
-      !determinant=det1-det2+det3
-c     !solve for beta(k) using Cramers Rule=================
-      !do k=1,3
-      !   do mw=1,3
-      !         A(1,mw)=R(0,mw)
-      !         A(2,mw)=R(1,mw)
-      !         A(3,mw)=R(2,mw)
-      !   enddo
-      !   A(1,k)=del(0)
-      !   A(2,k)=del(1)
-      !   A(3,k)=del(2)
-      !   det1=A(1,1)*(A(2,2)*A(3,3)-A(2,3)*A(3,2))
-      !   det2=A(1,2)*(A(2,1)*A(3,3)-A(2,3)*A(3,1))
-      !   det3=A(1,3)*(A(2,1)*A(3,2)-A(2,2)*A(3,1))
-      !   beta(k)=(det1-det2+det3)/determinant
-      !enddo
-
       do mw=1,3
          do m=1,2
             fw(m,mw) = beta(mw)*R(m,mw)
@@ -574,6 +566,103 @@ c     !solve for beta(k) using Cramers Rule=================
       fw(6,1) = fw(1,1)*chiL*(1.0+(1.0d0-alpha_seg)*(1.0d0-chiL))
       fw(6,3) = fw(1,3)*chiR*(1.0+(1.0d0-alpha_seg)*(1.0d0-chiR))
       fw(6,2) = seg_R - seg_L - fw(6,1) - fw(6,3)
+
+        ! NaN / Inf diagnostic block
+        if (.not.(hstarHLL == hstarHLL)) then
+            write(*,*) 'NaN detected: hstarHLL'
+        endif
+        if (.not.(hustarHLL == hustarHLL)) then
+            write(*,*) 'NaN detected: hustarHLL'
+        endif
+        if (.not.(hustarHLLn == hustarHLLn)) then
+            write(*,*) 'NaN detected: hustarHLLn'
+        endif
+        if (.not.(deldelh == deldelh)) then
+            write(*,*) 'NaN detected: deldelh'
+        endif
+        if (.not.(deldelhf == deldelhf)) then
+            write(*,*) 'NaN detected: deldelhf'
+        endif
+        if (.not.(source2dx == source2dx)) then
+            write(*,*) 'NaN detected: source2dx'
+        endif
+        if (.not.(s1s2bar == s1s2bar)) then
+            write(*,*) 'NaN detected: s1s2bar'
+        endif
+        if (.not.(s1s2_denom == s1s2_denom)) then
+            write(*,*) 'NaN detected: s1s2_denom'
+        endif
+        if (.not.(phiL_effective == phiL_effective)) then
+            write(*,*) 'NaN detected: phiL_effective'
+        endif
+        if (.not.(phiR_effective == phiR_effective)) then
+            write(*,*) 'NaN detected: phiR_effective'
+        endif
+        if (.not.(phi_eff == phi_eff)) then
+            write(*,*) 'NaN detected: phi_eff'
+        endif
+        if (.not.(taudirUfrac == taudirUfrac)) then
+            write(*,*) 'NaN detected: taudirUfrac'
+        endif
+        if (.not.(delbf == delbf)) then
+            write(*,*) 'NaN detected: delbf'
+        endif
+        if (.not.(beta(1) == beta(1))) then
+            write(*,*) 'NaN detected: beta(1)'
+        endif
+        if (.not.(beta(2) == beta(2))) then
+            write(*,*) 'NaN detected: beta(2)'
+        endif
+        if (.not.(beta(3) == beta(3))) then
+            write(*,*) 'NaN detected: beta(3)'
+            write(*,*) 'del0,del1', del(0),del(1)
+            write(*,*) 'a,b,c',a,b,c
+        endif
+        if (.not.(taudirR == taudirR)) then
+            write(*,*) 'NaN detected: taudir'
+            stop
+        endif
+        if (.not.(source2dx == source2dx)) then
+            write(*,*) 'NaN detected: src'
+        endif
+        if (abs(source2dx) > 1d30) then
+            write(*,*) 'Large value (Inf?) detected: src =', source2dx
+            write(*,*) 'source2dxf=',source2dxf
+            write(*,*) 's1s2ratio,bar', s1s2_ratio,s1s2bar
+            write(*,*) 'a,b,c',a,b,c
+            write(*,*) 'ss_delta', ss_delta
+            write(*,*) 'hustarHLLn',hustarHLLn
+            write(*,*) 'delb,delbf,deldelh,deldelhf',delb,delbf,
+     &          deldelh,deldelhf
+            write(*,*) 'taudirUfrac,phi_eff,tan_phi_max',
+     &            taudirUfrac,phi_eff,tan_phi_max
+            write(*,*) 'uedge,vedge', uedge,vedge,hL,hR
+            write(*,*) 'taudirR',taudirR
+            stop
+        endif
+        if (abs(source2dxf) > 1d30) then
+            write(*,*) 'Large value (Inf?) detected: srcf =', source2dxf
+            write(*,*) 'source2dx=',source2dx
+            write(*,*) 's1s2ratio,bar', s1s2_ratio,s1s2bar
+            write(*,*) 'a,b,c',a,b,c
+            write(*,*) 'ss_delta', ss_delta
+            write(*,*) 'hstarHLLn',hustarHLLn
+            stop
+        endif
+        if (abs(dels) < 1d-30) then
+            write(*,*) 'Large value (Inf?) detected: dels =', dels
+        endif
+        if (.not.(del(1) == del(1))) then
+            write(*,*) 'NaN detected: del(1)'
+        endif
+        if (.not.(del(2) == del(2))) then
+            write(*,*) 'NaN detected: del(2)'
+        endif
+        if (.not.(del(3) == del(3))) then
+            write(*,*) 'NaN detected: del(3)'
+        endif
+
+
       return
       end !subroutine riemann_dig2_aug_sswave_ez
 
