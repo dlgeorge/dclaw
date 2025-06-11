@@ -222,21 +222,30 @@ c     !find if sonic problem (or very far from steady state)
       ! a more rigorous approach is under development but would involve
       ! finding exact steady state solutions when d(p/rho*g*h)/dx neq 0.d0
       if (hR>drytol) then
-        pratR = max(min(1.d0 - pR/(rhoR*gz*hR),1.d0),0.d0)
+        pratR = max(min(pR/(rhoR*gz*hR),1.d0),0.d0)
       else
-        pratR = max(min(1.d0 - pL/(rhoL*gz*hL),1.d0),0.d0)
+        pratR = max(min(pL/(rhoL*gz*hL),1.d0),0.d0)
       endif
 
       if (hL>drytol) then
-        pratL = max(min(1.d0 - pL/(rhoL*gz*hL),1.d0),0.d0)
+        pratL = max(min(pL/(rhoL*gz*hL),1.d0),0.d0)
       else
-        pratL = max(min(1.d0 - pR/(rhoR*gz*hR),1.d0),0.d0)
+        pratL = max(min(pR/(rhoR*gz*hR),1.d0),0.d0)
       endif
-
-       phiL_effective = atan(max(0.d0,(1.d0-pratL))*tan(phiR))
+        !write(*,*) 'pratL,pratR',pratL,pratR
+       phiL_effective = atan(max(0.d0,(1.d0-pratL))*tan(phiL))
        phiR_effective = atan(max(0.d0,(1.d0 - pratR))*tan(phiR))
        phi_eff = max(0.5d0*(phiL_effective + phiR_effective),0.d0)
-
+       if (phi_eff.lt.1.d-6) then
+          phi_eff=0.d0
+        endif
+        if (phi_eff.gt.1.d-6.and..false.) then
+            write(*,*) '-------------------------'
+        write(*,*) 'tanphi',tan(phi_eff)
+        write(*,*) 'pratL,pratR',pratL,pratR
+            write(*,*) 'tan', max(0.d0,(1.d0-pratL))*tan(phiL)
+            write(*,*) 'tan', (max(0.d0,(1.d0 - pratR))*tan(phiR))
+        endif
       ! determine if steady state Riemann invariants are close or far
       ! if far, critical excess ratio, s1s2_ratio, evaluated using
       ! far left and right states (qR,qL) are not a good approx at interface
@@ -344,7 +353,7 @@ c     !find if sonic problem (or very far from steady state)
       !if this is a static problem (vnorm=0) then friction opposes net force and determined further below
       hustarHLLn = (dels*huL + sw(1)*sw(3)*(hR-hL-deldelh)
      &    +sw(1)*(huL-huR+source2dx))/dels
-      if (vnorm.gt.veltol1) then
+      !if (vnorm.gt.veltol1) then
         if (sw(1).gt.0.d0) then
           uedge = uL
           huedge = huL
@@ -372,6 +381,9 @@ c     !find if sonic problem (or very far from steady state)
      &       max(abs(gz*hbar*s1s2_ratio*taudirUfrac),1.d-12)
         tan_phi_max = 0.99999d0*tan_phi_max
         !write(*,*) 'tan_phi_max,tan(phi_eff)',tan_phi_max,tan(phi_eff)
+        
+
+      if (vnorm.gt.veltol1) then
         delbf = taudirUfrac*min(tan(phi_eff),tan_phi_max)
         deldelhf = delbf*gz*hbar*s1s2_denom
         if (abs(deldelhf).eq.0.d0) then
@@ -469,11 +481,12 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
         ! taudirR has already been reduced to dx Fx/|F| in module
         ! friction can be less than Fx but it cannot be larger than Fx
         ! otherwise Riemann problem would fail in the wrong direction
-        if (abs(hbar*taudirR*gz*tan(phi_eff))
+        !if (abs(hbar*taudirR*gz*tan(phi_eff))
+        if (abs(hbar*gz*taudirUfrac*min(tan(phi_eff),tan_phi_max))
      &            .lt.abs(del(2)-source2dx)) then
             !failure and friction opposes failure
             delbf = dsign(1.d0,del(2)-source2dx)*
-     &                taudirR*tan(phi_eff)
+     &       taudirUfrac*min(tan(phi_eff),tan_phi_max)
             source2dxf = - gz*hbar*delbf
             deldelhf = -delbf
             deldelh = deldelh + deldelhf
@@ -541,9 +554,9 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
       enddo
 
       !split the jump in phi (mom. flux) in middle wave into outer waves
-      !fw(2,1) = fw(2,1) + 0.5d0*fw(2,2)
-      !fw(2,3) = fw(2,3) + 0.5d0*fw(2,2)
-      !fw(2,2) = 0.d0
+      fw(2,1) = fw(2,1) + 0.5d0*fw(2,2)
+      fw(2,3) = fw(2,3) + 0.5d0*fw(2,2)
+      fw(2,2) = 0.d0
       !waves and fwaves for delta hum
       fw(4,1) = fw(1,1)*mL
       fw(4,3) = fw(1,3)*mR

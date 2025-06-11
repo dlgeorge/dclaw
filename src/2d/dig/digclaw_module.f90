@@ -631,7 +631,8 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             Fmag = sqrt(Fymax2 + Fdx**2)
             Fresist = 0.5d0*(tauL/rhoL + tau/rho)*dx
             if (Fmag.gt.Fresist.and.Fmag.gt.1.d-16) then
-                aux(i_taudir_x,i,j) = dx*Fdx/Fmag
+                !aux(i_taudir_x,i,j) = dx*abs(Fdx)/Fmag
+                aux(i_taudir_x,i,j) = dx
                 aux(i_fsphi,i,j) = min(aux(i_fsphi,i,j), Fresist/Fmag)
             elseif (Fmag.gt.1.d-16) then
                 aux(i_taudir_x,i,j) = dx*Fdx/Fmag
@@ -759,7 +760,8 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             Fmag = sqrt(Fxmax2 + Fdy**2)
             Fresist = 0.5d0*(tauB/(1.d-14+rhoB) + tau/(1.d-14+rho)*dy)
             if (Fmag.gt.Fresist.and.Fmag.gt.1.d-16) then
-                aux(i_taudir_y,i,j) = dy*abs(Fdy)/Fmag
+                !aux(i_taudir_y,i,j) = dy*abs(Fdy)/Fmag
+                aux(i_taudir_y,i,j) = dy
                 aux(i_fsphi,i,j) = min(aux(i_fsphi,i,j), Fresist/Fmag)
             elseif (Fmag.gt.1.d-16) then
                 aux(i_taudir_y,i,j) = dy*abs(Fdy)/Fmag
