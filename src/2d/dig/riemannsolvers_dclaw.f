@@ -50,7 +50,7 @@ c-----------------------------------------------------------------------
       double precision phiL_effective, phiR_effective,phi_eff
       double precision rhoL,rhoR,tauL,tauR,rho_bar,rhoedge
       double precision tanpsi, delbf, deldelhf,huedge
-      double precision kperm,m_eq,alphainv,s1s2_denom
+      double precision kperm,m_eq,alphainv,s1s2_denom,tauratL,tauratR
       double precision theta,gamma,eps,taudirUfrac,hustarHLLn
       double precision sL,sR,sRoe1,sRoe2,sE1,sE2,uhat,chat
       double precision delb,s1m,s2m,hm,criticaltol,criticaltol_2
@@ -185,18 +185,26 @@ c     !find if sonic problem (or very far from steady state)
       ! finding exact steady state solutions when d(p/rho*g*h)/dx neq 0.d0
       if (hR>drytol) then
         pratR = max(min(pR/(rhoR*gz*hR),1.d0),0.d0)
+        tauratR = tauR/(rhoR*gz*hR)
       else
         pratR = max(min(pL/(rhoL*gz*hL),1.d0),0.d0)
+        tauratR = tauL/(rhoL*gz*hL)
       endif
 
       if (hL>drytol) then
         pratL = max(min(pL/(rhoL*gz*hL),1.d0),0.d0)
+        tauratL = tauL/(rhoL*gz*hL)
       else
         pratL = max(min(pR/(rhoR*gz*hR),1.d0),0.d0)
+        tauratL = tauR/(rhoR*gz*hR)
       endif
+      phiL_effective = tauratR
+      phiR_effective = tauratL
         !write(*,*) 'pratL,pratR',pratL,pratR
-       phiL_effective = atan(max(0.d0,(1.d0-pratL))*tan(phiL))
-       phiR_effective = atan(max(0.d0,(1.d0 - pratR))*tan(phiR))
+       !phiL_effective = atan(max(0.d0,(1.d0-pratL))*tan(phiL))
+       !phiR_effective = atan(max(0.d0,(1.d0 - pratR))*tan(phiR))
+       !phiL_effective = atan(max(0.d0,(tauratL+pratL))*tan(phiL))
+       !phiR_effective = atan(max(0.d0,(tauratR+pratR))*tan(phiR))
        phi_eff = max(0.5d0*(phiL_effective + phiR_effective),0.d0)
        if (phi_eff.lt.1.d-6) then
           phi_eff=0.d0
