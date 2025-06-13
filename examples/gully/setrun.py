@@ -41,7 +41,7 @@ amr_test_no = 0
 # or three levels with 100 -> 50 -> 25 m grid cells.
 # keep track of the entire refinement factor (needed for timestep control below)
 if amr:
-    factor = 1
+    factor = 10
     mxnest = 3
     refinement_ratios = [2, 2]
 else:

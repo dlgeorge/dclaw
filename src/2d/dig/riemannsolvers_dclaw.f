@@ -39,17 +39,16 @@ c-----------------------------------------------------------------------
 
       double precision fw(meqn,mwaves)
       double precision sw(mwaves)
-      double precision psi(4)
 
 *     !local
       integer m,mw,k,cwavetype
-      double precision h,u,v,mbar
+      !double precision h,u,v
       double precision det1,det2,det3,determinant
-      double precision R(0:2,1:3),del(0:4) !A(3,3)
+      double precision R(0:2,1:3),del(0:4) 
       double precision beta(3)
       double precision pratL,pratR,tan_phi_max,source2dxf
       double precision phiL_effective, phiR_effective,phi_eff
-      double precision rho,rhoL,rhoR,tauL,tauR,tau,gzL,gzR
+      double precision rhoL,rhoR,tauL,tauR,rho_bar,rhoedge
       double precision tanpsi, delbf, deldelhf,huedge
       double precision kperm,m_eq,alphainv,s1s2_denom
       double precision theta,gamma,eps,taudirUfrac,hustarHLLn
@@ -71,12 +70,6 @@ c-----------------------------------------------------------------------
       criticaltol = 1.d-3! max(drytol*grav, 1d-6)
       criticaltol_2 = sqrt(criticaltol)
 
-      do m=1,4
-         psi(m) = 0.d0
-      enddo
-
-      gzL=grav*dcos(thetaL)
-      gzR=grav*dcos(thetaR)
       theta = 0.5d0*(thetaL + thetaR)
       gz = grav*dcos(theta)
 
@@ -86,48 +79,18 @@ c-----------------------------------------------------------------------
       ! we have defined beta_seg as 1-alpha_seg
       alpha_seg=1.0d0-beta_seg
 
-      if (hL.ge.drytol.and.hR.ge.drytol) then
-
-         call setvars(hL,uL,vL,mL,pL,chiL,gzL,rhoL,kperm,alphainv,m_eq,
+         call setvars(hL,uL,vL,mL,pL,chiL,gz,rhoL,kperm,alphainv,m_eq,
      &        tanpsi,tauL)
 
-         call setvars(hR,uR,vR,mR,pR,chiR,gzR,rhoR,kperm,alphainv,m_eq,
+         call setvars(hR,uR,vR,mR,pR,chiR,gz,rhoR,kperm,alphainv,m_eq,
      &        tanpsi,tauR)
 
 
-         h = 0.5d0*(hL + hR)
-         v = 0.5d0*(vL + vR)
-         mbar = 0.5d0*(mL + mR)
-      elseif (hL.ge.drytol) then
-
-         call setvars(hL,uL,vL,mL,pL,chiL,gzL,rhoL,kperm,alphainv,m_eq,
-     &        tanpsi,tauL)
-
-      call setvars(hL,uL,vL,mL,pL,chiL,gzL,rhoR,kperm,alphainv,m_eq,
-     &        tanpsi,tauR)
-
-         tauR=0.5d0*tauL
-         h = 0.5d0*hL
-         v = vL
-         mbar = mL
-      else
-
-         call setvars(hR,uR,vR,mR,pR,chiR,gzR,rhoL,kperm,alphainv,m_eq,
-     &        tanpsi,tauL)
-         call setvars(hR,uR,vR,mR,pR,chiR,gzR,rhoR,kperm,alphainv,m_eq,
-     &        tanpsi,tauR)
-
-         tauL=0.5d0*tauR
-         h = 0.5d0*hR
-         v = vR
-         mbar = mR
-      endif
-
-      tauL = fsL*tauL
-      tauR = fsR*tauR
-      rho = 0.5d0*(rhoL + rhoR)
-      tau = 0.5d0*(tauL + tauR)
-      gamma = 0.25d0*(rho_f + 3.0d0*rho)/rho
+      hbar = 0.5d0*(hL + hR)
+      rho_bar = 0.5d0*(rhoL + rhoR)
+      
+      !tau = 0.5d0*(tauL + tauR)
+      gamma = 0.25d0*(rho_f + 3.0d0*rho_bar)/rho_bar
       gammaL = 0.25d0*(rho_f + 3.0d0*rhoL)/rhoL
       gammaR = 0.25d0*(rho_f + 3.0d0*rhoR)/rhoR
 
@@ -146,7 +109,7 @@ c-----------------------------------------------------------------------
       sE2 = max(sR,sRoe2) ! Eindfeldt speed 2 wave
       sw(1) = sE1
       sw(3) = sE2
-      u = uhat
+      !u = uhat
 
       call riemanntype(hL,hR,uL,uR,hm,s1m,s2m,rare1,rare2,
      &                                          1,drytol,geps)
@@ -190,7 +153,6 @@ c     !determine the middle entropy corrector wave------------------------
       delb=(bR-bL)!#kappa
 
       !determine ss-wave
-      hbar =  0.5d0*(hL+hR)
       s1s2bar = 0.25d0*(uL+uR)**2- gz*hbar
       s1s2tilde= max(0.d0,uL*uR) - gz*hbar
 
@@ -366,10 +328,13 @@ c     !find if sonic problem (or very far from steady state)
         endif
         if (uedge >0.d0) then
           vedge = vL
+          rhoedge = rhoL
         elseif (uedge<0.d0) then
           vedge = vR
+          rhoedge = rhoR
         else
           vedge = 0.5d0*(vL+vR)
+          rhoedge = 0.5d0*(rhoL + rhoR)
         endif
         if (abs(uedge).gt.1.d-6) then
           taudirUfrac = taudirR*uedge/(sqrt(uedge**2 + vedge**2))
@@ -461,10 +426,10 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
       del(1) = huR - huL
       del(2) = hR*uR**2 + 0.5d0*kappa*gz*hR**2 -
      &      (hL*uL**2 + 0.5d0*kappa*gz*hL**2)
-      del(2) = del(2) + (1.d0-kappa)*h*(pR-pL)/rho
-      del(3) = pR - pL - gamma*rho*gz*deldelh
-      del(4) = -gamma*rho*gz*u*(hR-hL) + gamma*rho*gz*del(1)
-     &         + u*(pR-pL)
+      del(2) = del(2) + (1.d0-kappa)*hbar*(pR-pL)/rho_bar
+      del(3) = pR - pL - gamma*rho_bar*gz*deldelh
+      del(4) = -gamma*rho_bar*gz*uhat*(hR-hL) 
+     &    + gamma*rho_bar*gz*del(1) + uhat*(pR-pL)
 
 *     !determine the source term
 
@@ -482,11 +447,11 @@ c     !find bounds on deltah at interface based on depth positivity constraint a
         ! friction can be less than Fx but it cannot be larger than Fx
         ! otherwise Riemann problem would fail in the wrong direction
         !if (abs(hbar*taudirR*gz*tan(phi_eff))
-        if (abs(hbar*gz*taudirUfrac*min(tan(phi_eff),tan_phi_max))
+        if (abs(hbar*gz*taudirR*min(tan(phi_eff),tan_phi_max))
      &            .lt.abs(del(2)-source2dx)) then
             !failure and friction opposes failure
             delbf = dsign(1.d0,del(2)-source2dx)*
-     &       taudirUfrac*min(tan(phi_eff),tan_phi_max)
+     &       taudirR*min(tan(phi_eff),tan_phi_max)
             source2dxf = - gz*hbar*delbf
             deldelhf = -delbf
             deldelh = deldelh + deldelhf

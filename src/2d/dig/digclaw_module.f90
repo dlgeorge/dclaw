@@ -491,6 +491,7 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
       integer :: mx,my,mbc,meqn,maux
 
       !Locals
+      double precision :: FdyV(4),FdxV(4),wdy(4),wdx(4)
       double precision :: gz
       double precision :: h,hu,hv,hm,p,hchi,b,eta
       double precision :: hL,huL,hvL,hmL,pL,hchiL,bL,etaL
@@ -501,7 +502,7 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
       double precision :: hBL,huBL,hvBL,hmBL,pBL,hchiBL,bBL,etaBL
       double precision :: hBR,huBR,hvBR,hmBR,pBR,hchiBR,bBR,etaBR
 
-      double precision :: u,v,m,chi
+      double precision :: u,v,m,chi,veltol
       double precision :: uL,vL,mL,chiL,rhoL
       double precision :: uR,vR,mR,chiR,rhoR
       double precision :: uB,vB,mB,chiB,rhoB
@@ -512,13 +513,22 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
       double precision :: theta
       double precision :: tau,rho,alphainv,tauB,tauL
       double precision :: tanpsi,kperm,m_eq
-      double precision :: Fxmax2,Fymax2,Fmag,Fresist
+      double precision :: Fdxmax,Fdymax,Fmag,Fresist
       double precision :: FdyBL,FdyB,FdyTL,FdyT,FdxL,FdxBL,FdxR,FdxBR
-      double precision :: Fdx,Fdy
+      double precision :: Fdx,Fdy,nx,ny,dirnorm
 
       integer :: i,j
 
+      logical reproject_cosines
+
+
       gz = grav
+      veltol = 1.d-10
+
+      !reproject to correct if force direction is inconsistent
+      !between x and y stencils for 2 edges (left and lower)
+      !one should expect ||taudir_x,taudir_y||=||(dx,dy)||
+      reproject_cosines = .true.
 
       !first for cell edge between i,j and i-1,j for x direction
       do j=2-mbc,my+mbc-1
@@ -555,6 +565,12 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             bL = aux(1,i-1,j)-q(i_bdif,i-1,j)
             etaL= hL+bL
             call qfix(hL,huL,hvL,hmL,pL,hchiL,uL,vL,mL,chiL,rhoL,gz)
+
+            ! If both cells are dry, no RS anyway, move on
+            if (max(h,hL)<dry_tolerance) then
+               aux(i_taudir_x,i,j) = dx
+               cycle
+            endif
 
             hB = q(i_h,i,j-1)
             huB= q(i_hu,i,j-1)
@@ -596,25 +612,22 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             etaBL= hBL+bBL
             call qfix(hBL,huBL,hvBL,hmBL,pBL,hchiBL,uBL,vBL,mBL,chiBL,rhoBL,gz)
 
-            ! If cell center is dry, set value used for
-            ! cell center here based on left/right cell
-            ! values.
-
-            ! If all cells in the center are dry, return
-            ! zeros for taudir_x, _y, and fsphi (no failure)
-            if ((h+hL+hB+hT+hBL+hTL)<dry_tolerance) then
-               aux(i_taudir_x,i,j) = 0.d0
-               cycle
-            endif
-
-            ! if any cells in stencil have motion allow failure
-            if ((hu**2+huL**2+huB**2+huT**2+huBL**2+huTL**2+hv**2+hvL**2+hvB**2+hvT**2+hvBL**2+hvTL**2)>0.d0) then
+            ! if any cells in stencil have motion allow failure (determined in RS)
+            if ((hu**2+huL**2+huB**2+huT**2+huBL**2+huTL**2+hv**2+hvL**2+hvB**2+hvT**2+hvBL**2+hvTL**2)>veltol) then
                aux(i_taudir_x,i,j) = dx
                cycle
             endif
 
             call setvars(h,u,v,m,p,chi,gz,rho,kperm,alphainv,m_eq,tanpsi,tau)
             call setvars(hL,uL,vL,mL,pL,chiL,gz,rhoL,kperm,alphainv,m_eq,tanpsi,tauL)
+            ! if one cell is dry, use resistance of wet cell
+            if (h<dry_tolerance) then
+                tau = tauL
+                rho = rhoL
+            elseif (hL<dry_tolerance) then
+                tauL = tau
+                rhoL = rho
+            endif
 
             !Find if failure for i'th cell edge (x-direction, j row)
             !Force in normal direction (x)
@@ -625,17 +638,28 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             call calc_interface_force(FdyB,gz,h,hB,b,bB,dy,0.d0)
             call calc_interface_force(FdyTL,gz,hTL,hT,bTL,bT,dy,0.d0)
             call calc_interface_force(FdyT,gz,hT,h,bT,b,dy,0.d0)
-            
+            FdyV = [FdyT,FdyTL,FdyBL,FdyB]
 
-            Fymax2 = max(FdyT**2,max(FdyTL**2,max(FdyBL**2,FdyB**2)))
-            Fmag = sqrt(Fymax2 + Fdx**2)
-            Fresist = 0.5d0*(tauL/rhoL + tau/rho)*dx
-            if (Fmag.gt.Fresist.and.Fmag.gt.1.d-16) then
-                !aux(i_taudir_x,i,j) = dx*abs(Fdx)/Fmag
+            !find largest force in y skip below if ~0
+            Fdymax = maxval(abs(FdyV))
+            if (Fdymax<1.d-6) then
                 aux(i_taudir_x,i,j) = dx
+               cycle
+            endif
+            !weight the forces in y to determine Fdy
+            !average forces gives 2nd order for smooth gradients
+            !weight strategy in case there is a sharp discontinuity at one interface that dominates local slope (reduce Fdx)
+            wdy = abs(FdyV)/sum(abs(FdyV))
+            Fdy = dot_product(FdyV,wdy)
+            Fmag = sqrt(Fdy**2 + Fdx**2)
+            !find resistance at cell edge center
+            Fresist = 0.5d0*(tauL/rhoL + tau/rho)
+            if (Fmag.gt.Fresist.and.Fmag.gt.1.d-16) then
+                aux(i_taudir_x,i,j) = dx*abs(Fdx)/Fmag
+                !aux(i_taudir_x,i,j) = dx
                 aux(i_fsphi,i,j) = min(aux(i_fsphi,i,j), Fresist/Fmag)
             elseif (Fmag.gt.1.d-16) then
-                aux(i_taudir_x,i,j) = dx*Fdx/Fmag
+                aux(i_taudir_x,i,j) = dx*abs(Fdx)/Fmag
                 aux(i_fsphi,i,j) = min(aux(i_fsphi,i,j), Fresist/Fmag)
             else
                 aux(i_taudir_x,i,j) = dx
@@ -675,16 +699,6 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             phi = aux(i_phi,i,j)
             call qfix(h,hu,hv,hm,p,hchi,u,v,m,chi,rho,gz)
 
-            hL = q(i_h,i-1,j)
-            huL= q(i_hu,i-1,j)
-            hvL= q(i_hv,i-1,j)
-            hmL = q(i_hm,i-1,j)
-            pL  = q(i_pb,i-1,j)
-            hchiL = q(i_hchi,i-1,j)
-            bL = aux(1,i-1,j)-q(i_bdif,i-1,j)
-            etaL= hL+bL
-            call qfix(hL,huL,hvL,hmL,pL,hchiL,uL,vL,mL,chiL,rhoL,gz)
-
             hB = q(i_h,i,j-1)
             huB= q(i_hu,i,j-1)
             hvB= q(i_hv,i,j-1)
@@ -694,6 +708,22 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             bB = aux(1,i,j-1)-q(i_bdif,i,j-1)
             etaB= hB+bB
             call qfix(hB,huB,hvB,hmB,pB,hchiB,uB,vB,mB,chiB,rhoB,gz)
+
+            ! If both cells are dry, no RS anyway, move on
+            if (max(h,hB)<dry_tolerance) then
+               aux(i_taudir_y,i,j) = dy
+               cycle
+            endif
+
+            hL = q(i_h,i-1,j)
+            huL= q(i_hu,i-1,j)
+            hvL= q(i_hv,i-1,j)
+            hmL = q(i_hm,i-1,j)
+            pL  = q(i_pb,i-1,j)
+            hchiL = q(i_hchi,i-1,j)
+            bL = aux(1,i-1,j)-q(i_bdif,i-1,j)
+            etaL= hL+bL
+            call qfix(hL,huL,hvL,hmL,pL,hchiL,uL,vL,mL,chiL,rhoL,gz)
 
             hBL = q(i_h,i-1,j-1)
             huBL= q(i_hu,i-1,j-1)
@@ -725,25 +755,23 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             etaR= hR+bR
             call qfix(hR,huR,hvR,hmR,pR,hchiR,uR,vR,mR,chiR,rhoR,gz)
 
-            ! If cell center is dry, set value used for
-            ! cell center here based on left/right cell
-            ! values.
-
-            ! If all cells in the center are dry, return
-            ! zeros for taudir_x, _y, and fsphi (no failure)
-            if ((h+hL+hR+hBL+hBR+hB)<dry_tolerance) then
-               aux(i_taudir_y,i,j) = dy
-               cycle
-            endif
-
             ! if any cells in stencil have motion allow failure
-            if ((hu**2+huL**2+huR**2+huBL**2+huB**2+huBR**2+hv**2+hvL**2+hvR**2+hvBL**2+hvB**2+hvBR**2)>0.d0) then
+            if ((hu**2+huL**2+huR**2+huBL**2+huB**2+huBR**2+hv**2+hvL**2+hvR**2+hvBL**2+hvB**2+hvBR**2)>veltol) then
                aux(i_taudir_y,i,j) = dy
                cycle
             endif
 
             call setvars(h,u,v,m,p,chi,gz,rho,kperm,alphainv,m_eq,tanpsi,tau)
             call setvars(hB,uB,vB,mB,pB,chiB,gz,rhoB,kperm,alphainv,m_eq,tanpsi,tauB)
+            ! if one cell is dry, use resistance of wet cell
+            if (h<dry_tolerance) then
+                tau = tauB
+                rho = rhoB
+            elseif (hB<dry_tolerance) then
+                tauB = tau
+                rhoB = rho
+            endif
+
 
             !Find if failure for j'th cell edge (y-direction, i column)
             !Force in normal direction (y)
@@ -754,14 +782,25 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
             call calc_interface_force(FdxBL,gz,hBL,hB,bBL,bB,dx,theta)
             call calc_interface_force(FdxR,gz,hR,h,bR,b,dx,theta)
             call calc_interface_force(FdxBR,gz,hBR,hB,bBR,bB,dx,theta)
-            
+            FdxV = [FdxL,FdxBL,FdxR,FdxBR]
 
-            Fxmax2 = max(FdxL**2,max(FdxBL**2,max(FdxR**2,FdxBR**2)))
-            Fmag = sqrt(Fxmax2 + Fdy**2)
-            Fresist = 0.5d0*(tauB/(1.d-14+rhoB) + tau/(1.d-14+rho)*dy)
-            if (Fmag.gt.Fresist.and.Fmag.gt.1.d-16) then
-                !aux(i_taudir_y,i,j) = dy*abs(Fdy)/Fmag
+            !find largest force in y skip below if ~0
+            Fdxmax = maxval(abs(FdxV))
+            if (Fdxmax<1.d-6) then
                 aux(i_taudir_y,i,j) = dy
+               cycle
+            endif
+            !weight the forces in y to determine Fdy
+            !average forces gives 2nd order for smooth gradients
+            !weight strategy in case there is a sharp discontinuity at one interface that dominates local slope (reduce Fdx)
+            wdx = abs(FdxV)/sum(abs(FdxV))
+            Fdx = dot_product(FdxV,wdx)
+            Fmag = sqrt(Fdy**2 + Fdx**2)
+            !find resistance at cell edge center
+            Fresist = 0.5d0*(tauB/rhoB + tau/rho)
+            if (Fmag.gt.Fresist.and.Fmag.gt.1.d-16) then
+                aux(i_taudir_y,i,j) = dy*abs(Fdy)/Fmag
+                !aux(i_taudir_y,i,j) = dy
                 aux(i_fsphi,i,j) = min(aux(i_fsphi,i,j), Fresist/Fmag)
             elseif (Fmag.gt.1.d-16) then
                 aux(i_taudir_y,i,j) = dy*abs(Fdy)/Fmag
@@ -773,6 +812,22 @@ subroutine calc_taudir(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
 
          enddo
       enddo
+
+      if (reproject_cosines) then
+      !fix if new dx,dy ~= nx*dx + ny*dy not ~ |(dx,dy)|
+      !rescale both so direction cosines at cell corner
+        do j=2-mbc,my+mbc-1
+            do i=2-mbc,mx+mbc-1
+                h = q(i_h,i,j)
+                nx = aux(i_taudir_x,i,j)/dx
+                ny = aux(i_taudir_y,i,j)/dy
+                dirnorm = max(sqrt(nx**2 + ny**2),1.d-12)
+
+                aux(i_taudir_x,i,j) = aux(i_taudir_x,i,j)/(dirnorm) 
+                aux(i_taudir_y,i,j) = aux(i_taudir_y,i,j)/(dirnorm)
+            enddo
+        enddo
+      endif
 
 end subroutine calc_taudir
 
@@ -944,7 +999,7 @@ subroutine calc_pmin(meqn,mbc,mx,my,xlower,ylower,dx,dy,q,maux,aux)
         else
             bRdx = bR
         endif
-        Fx = -.5d0*gz*(hR**2-hL**2)-gz*0.5*(hL+hR)*(bRdx-bLdx-dx*tan(theta))
+        Fx = (-.5d0*gz*(hR**2-hL**2)-gz*0.5*(hL+hR)*(bRdx-bLdx))/dx-(gz*0.5*(hL+hR)*tan(theta))*dx
 
 
 
