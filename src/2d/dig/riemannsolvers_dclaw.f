@@ -198,8 +198,8 @@ c     !find if sonic problem (or very far from steady state)
         pratL = max(min(pR/(rhoR*gz*hR),1.d0),0.d0)
         tauratL = tauR/(rhoR*gz*hR)
       endif
-      phiL_effective = tauratR
-      phiR_effective = tauratL
+      phiL_effective = atan(tauratR)
+      phiR_effective = atan(tauratL)
         !write(*,*) 'pratL,pratR',pratL,pratR
        !phiL_effective = atan(max(0.d0,(1.d0-pratL))*tan(phiL))
        !phiR_effective = atan(max(0.d0,(1.d0 - pratR))*tan(phiR))
@@ -209,13 +209,7 @@ c     !find if sonic problem (or very far from steady state)
        if (phi_eff.lt.1.d-6) then
           phi_eff=0.d0
         endif
-        if (phi_eff.gt.1.d-6.and..false.) then
-            write(*,*) '-------------------------'
-        write(*,*) 'tanphi',tan(phi_eff)
-        write(*,*) 'pratL,pratR',pratL,pratR
-            write(*,*) 'tan', max(0.d0,(1.d0-pratL))*tan(phiL)
-            write(*,*) 'tan', (max(0.d0,(1.d0 - pratR))*tan(phiR))
-        endif
+        
       ! determine if steady state Riemann invariants are close or far
       ! if far, critical excess ratio, s1s2_ratio, evaluated using
       ! far left and right states (qR,qL) are not a good approx at interface

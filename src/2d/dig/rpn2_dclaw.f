@@ -348,10 +348,10 @@ c============= compute fluctuations=============================================
          apdq(1:meqn,:) = 0.d0
          do i=2-mbc,mx+mbc
             do  mw=1,mwaves
-               if (s(mw,i) < 0.d0) then
+               if (s(mw,i) < -1.d-14) then
                      amdq(1:meqn,i) = amdq(1:meqn,i)
      &                              + fwave(1:meqn,mw,i)
-               else if (s(mw,i) > 0.d0) then
+               else if (s(mw,i) > 1.d-14) then
                   apdq(1:meqn,i)  = apdq(1:meqn,i)
      &                          + fwave(1:meqn,mw,i)
                else
