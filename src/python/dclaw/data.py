@@ -747,7 +747,7 @@ class PInitDClawInputData(clawpack.clawutil.data.ClawData):
            - Hydrostatic pressure times a specified coefficient, :math:`C_p`
              given by ``init_pratio``, :math:`p_b=C_p \rho_f g_z h`.
              Cannot exceed lithostatic pressure, :math:`p_b=((m\rho_s + (1-m)\rho_f) g_z h`
-             such that :math:`((m\rho_s + (1-m)\rho_f)/\rho_f\leq 1``.
+             such that :math:`C_p\leq((m\rho_s + (1-m)\rho_f)/\rho_f``.
 
     """
 
