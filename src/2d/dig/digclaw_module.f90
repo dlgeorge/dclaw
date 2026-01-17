@@ -20,7 +20,7 @@ module digclaw_module
 
     integer :: src2method,alphamethod,bed_normal,entrainment,entrainment_method
     integer :: segregation,curvature,init_ptype
-    double precision :: init_pmin_ratio
+    double precision :: init_pmin_ratio,init_pratio
     double precision :: grad_eta_max,cohesion_max,grad_eta_ave,eta_cell_count
 
     ! momentum autostop
@@ -250,6 +250,8 @@ contains
 
          call opendatafile(iunit, file_name)
          read(iunit,*) init_ptype
+         read(iunit,*) init_pratio
+
          close(unit=iunit)
 
          init_pmin_ratio = 1.d16
@@ -264,6 +266,7 @@ contains
          write(PINIT_PARM_UNIT,*) 'SETPINIT:'
          write(PINIT_PARM_UNIT,*) '---------'
          write(PINIT_PARM_UNIT,*) '    init_ptype:',init_ptype
+         write(PINIT_PARM_UNIT,*) '    init_pratio:',init_pratio
          close(PINIT_PARM_UNIT)
 
    end subroutine set_pinit

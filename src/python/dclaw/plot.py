@@ -707,11 +707,12 @@ def local_slope(current_data):
     etaT[-1, :] = np.nan
 
     row, col = eta.shape
+
     detadx = np.zeros((row, col, 4))
-    detadx[_i_h, :, :] = np.abs((eta - etaL) / (dx))
-    detadx[_i_hu, :, :] = np.abs((eta - etaB) / (dy))
-    detadx[_i_hu, :, :] = np.abs((etaR - eta) / (dx))
-    detadx[_i_hm, :, :] = np.abs((etaT - eta) / (dy))
+    detadx[:, :, 0] = np.abs((eta - etaL) / (dx))
+    detadx[:, :, 1] = np.abs((eta - etaB) / (dy))
+    detadx[:, :, 2] = np.abs((etaR - eta) / (dx))
+    detadx[:, :, 3] = np.abs((etaT - eta) / (dy))
 
     maxdetadx = np.max(detadx, axis=-1)
     slope = np.rad2deg(np.arctan(maxdetadx))
