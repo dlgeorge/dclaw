@@ -23,7 +23,7 @@ c-----------------------------------------------------------------------
 
       use geoclaw_module, only: grav, dry_tolerance
       use digclaw_module, only: beta_seg, rho_f, kappa
-      use digclaw_module, only: setvars
+      use digclaw_module, only: setvars,src2method
 
       implicit none
 
@@ -124,9 +124,20 @@ c-----------------------------------------------------------------------
       tauR = fsR*tauR
       rho = 0.5d0*(rhoL + rhoR)
       tau = 0.5d0*(tauL + tauR)
-      gamma = 0.25d0*(rho_f + 3.0d0*rho)/rho
-      gammaL = 0.25d0*(rho_f + 3.0d0*rhoL)/rhoL
-      gammaR = 0.25d0*(rho_f + 3.0d0*rhoR)/rhoR
+
+      select case (src2method)
+      case(-1)
+         ! gamma is
+         gamma = rho_f/rho
+         gammaL = rho_f/rhoL
+         gammaR = rho_f/rhoR
+
+      case(0:1)
+         gamma = 0.25d0*(rho_f + 3.0d0*rho)/rho
+         gammaL = 0.25d0*(rho_f + 3.0d0*rhoL)/rhoL
+         gammaR = 0.25d0*(rho_f + 3.0d0*rhoR)/rhoR
+      end select
+
 
       eps = kappa + (1.d0-kappa)*gamma
       geps = gz*eps
