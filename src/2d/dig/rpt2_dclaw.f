@@ -35,6 +35,7 @@
       use geoclaw_module, only: coordinate_system,earth_radius,deg2rad
       use digclaw_module, only: rho_f,rho_s,bed_normal,i_theta
       use digclaw_module, only: i_h,i_hu,i_hv,i_hm,i_pb,i_hchi,i_bdif
+      use digclaw_module, only: src2method
 
       implicit none
 
@@ -117,7 +118,19 @@
          endif
 
          rho = m*rho_s + (1.d0-m)*rho_f
-         gamma = 0.25d0*(rho_f + 3.d0*rho)/rho
+
+         select case (src2method)
+         case(-1)
+            ! gamma is chi in the papers
+            gamma = rho_f/rho
+         case(0:1)
+            gamma = 0.25d0*(rho_f + 3.d0*rho)/rho
+
+            ! DIG - Could consider another case-select or other options
+            ! here that allows gamma to become rho_f/rho when no
+            ! dilatency is present. And/or in other cases.
+
+         end select
 
          ! check if cell that transverse waves go into are both too high:
          ! Note: prior to v5.8.0 this checked against max rather than min
